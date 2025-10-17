@@ -15,7 +15,8 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL)
 
 from advanced_analyzer import AdvancedTradingAnalyzer
-from ultimate_strategy_analyzer import UltimateStrategyAnalyzer
+from ultimate_strategy_analyzer_improved import ImprovedUltimateStrategyAnalyzer
+from tfsa_questrade_750_universe import get_full_universe
 
 # Professional Trading Interface - Like Goldman Sachs, JP Morgan, Citadel
 st.set_page_config(
@@ -97,7 +98,12 @@ st.markdown("""
 def get_analyzer():
     # Use light data mode by default (rate-limit friendly). ML training can be toggled below.
     analyzer = AdvancedTradingAnalyzer(enable_training=False, data_mode="light")
+    
+    # Use optimized 779-stock TFSA/Questrade universe
+    analyzer.stock_universe = get_full_universe()
+    
     st.success(f"🚀 Optimizer loaded: {analyzer.max_workers} workers, caching enabled")
+    st.info(f"📊 Optimized Universe: {len(analyzer.stock_universe)} TFSA/Questrade stocks")
     return analyzer
 
 analyzer = get_analyzer()
@@ -187,19 +193,24 @@ analysis_type = st.sidebar.selectbox(
 
 # Show description for Ultimate Strategy
 if analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)":
-    st.sidebar.info("""
-    **🏆 Ultimate Strategy:**
+    st.sidebar.success("""
+    **🏆 IMPROVED Ultimate Strategy (True Consensus):**
     
-    Automatically runs all 4 optimal strategies:
-    1. Institutional Consensus (716 stocks)
-    2. Hedge Fund Alpha (500 stocks)
-    3. Quant Value Hunter (600 stocks)
-    4. Risk-Managed Core (400 stocks)
+    All 4 strategies analyze THE SAME 779 stocks:
+    1. Institutional Consensus (stability focus)
+    2. Hedge Fund Alpha (momentum focus)
+    3. Quant Value Hunter (value focus)
+    4. Risk-Managed Core (safety focus)
     
-    **Output:** Final consensus recommendations organized by conviction tiers with specific buy/sell targets.
+    **Logic:** Finds stocks where MULTIPLE strategies agree
+    - 4/4 agree = STRONG BUY (95% confidence, LOWEST RISK)
+    - 3/4 agree = STRONG BUY (85% confidence, LOW RISK)
+    - 2/4 agree = BUY (75% confidence, MEDIUM RISK)
+    
+    **Output:** True consensus picks with detailed agreement metrics
     
     **Time:** 2-3 hours
-    **Expected Return:** 26-47% annually
+    **Expected Return:** 26-47% annually (lower risk)
     
     ⚠️ Other parameters below are ignored when using Ultimate Strategy.
     """)
@@ -209,14 +220,27 @@ enable_ml_training = st.sidebar.checkbox("Enable ML Training (longer, more accur
 analyzer.enable_training = bool(enable_ml_training)
 
 # Dynamic stock count slider based on universe size
-max_available = max(50, min(len(analyzer.stock_universe), 1200))
-default_count = min(300, max_available)
-num_stocks = st.sidebar.slider("Number of Stocks", 20, max_available, default_count)
+max_available = len(analyzer.stock_universe)  # 779 stocks
+default_count = max_available  # Default to full universe for best coverage
+num_stocks = st.sidebar.slider(
+    "Number of Stocks", 
+    20, 
+    max_available, 
+    default_count,
+    help=f"💡 Recommended: Use {max_available} (full universe) for maximum opportunity capture"
+)
+
+# Show recommendation for full universe
+if num_stocks == max_available:
+    st.sidebar.success(f"✅ Using full universe ({max_available} stocks) - Maximum coverage!")
+elif num_stocks < 500:
+    st.sidebar.warning(f"⚠️ Using {num_stocks} stocks. Consider using {max_available} for better opportunities.")
 
 # Cap filter and risk style
 cap_filter = st.sidebar.selectbox(
     "Cap Filter",
-    ["Large Cap", "Mid Cap", "Small Cap", "All"]
+    ["All", "Large Cap", "Mid Cap", "Small Cap"],
+    help="💡 Recommended: 'All' for comprehensive analysis"
 )
 
 risk_style = st.sidebar.selectbox(
@@ -226,8 +250,9 @@ risk_style = st.sidebar.selectbox(
 
 market_focus = st.sidebar.selectbox(
     "Market Focus",
-    ["S&P 500 Large Cap", "NASDAQ Growth", "Dow Jones Industrial", "Russell 2000 Small Cap", 
-     "All Markets", "Sector Rotation", "Momentum Stocks", "Value Stocks", "Dividend Aristocrats"]
+    ["All Markets", "S&P 500 Large Cap", "NASDAQ Growth", "Russell 2000 Small Cap", 
+     "Sector Rotation", "Momentum Stocks", "Value Stocks", "Dividend Aristocrats"],
+    help="💡 Recommended: 'All Markets' for comprehensive coverage"
 )
 
 # Legacy controls (kept for layout, not used in light mode)
@@ -262,11 +287,17 @@ st.sidebar.markdown("---")
 # Enhanced stock selection with Market Focus integration
 def get_comprehensive_symbol_selection(analyzer, cap_filter: str, market_focus: str, count: int):
     """
-    Enhanced symbol selection that considers both cap filter and market focus
-    Returns a larger, more comprehensive set for better analysis
+    IMPROVED: Uses full 779-stock universe with optional filtering
+    All analysis types now analyze the SAME comprehensive stock set
     """
+    # Always use the full optimized universe (779 stocks)
     universe = analyzer.stock_universe
     universe_size = len(universe)
+    
+    # For comprehensive analysis, use the full universe
+    # This ensures all analysis types see the same opportunities
+    if count >= 500 or cap_filter == "All":
+        return universe[:min(count, len(universe))]
     
     # Define market focus symbol sets
     market_focus_symbols = {
@@ -463,8 +494,8 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
         st.markdown("# 🏆 ULTIMATE STRATEGY - AUTOMATED 4-STRATEGY CONSENSUS")
         st.markdown("### Running all 4 optimal strategies automatically...")
         
-        # Initialize Ultimate Strategy Analyzer
-        ultimate_analyzer = UltimateStrategyAnalyzer(analyzer)
+        # Initialize IMPROVED Ultimate Strategy Analyzer (true consensus)
+        ultimate_analyzer = ImprovedUltimateStrategyAnalyzer(analyzer)
         
         # Progress tracking
         progress_bar = st.progress(0)
