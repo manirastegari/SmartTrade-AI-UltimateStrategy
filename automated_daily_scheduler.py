@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Automated Daily Scheduler for SmartTrade AI Ultimate Strategy
-Runs at 6am Eastern Time every weekday (Mon-Fri)
+Runs at 4:30am Eastern Time every weekday (Mon-Fri) - BEFORE MARKET OPEN
 Exports results to Excel with timestamps and pushes to GitHub
+Uses FIXED Ultimate Strategy (45-minute optimized version)
 """
 
 import schedule
@@ -168,19 +169,19 @@ class AutomatedUltimateStrategyScheduler:
             sys.path.insert(0, str(self.project_path))
             
             from advanced_analyzer import AdvancedTradingAnalyzer
-            from ultimate_strategy_analyzer_improved import ImprovedUltimateStrategyAnalyzer
+            from ultimate_strategy_analyzer_fixed import FixedUltimateStrategyAnalyzer
             
             # Initialize analyzers
-            logger.info("Initializing IMPROVED analyzers (true consensus logic)...")
+            logger.info("Initializing FIXED analyzers (optimized 45-min runtime)...")
             analyzer = AdvancedTradingAnalyzer(enable_training=True, data_mode="light")
-            ultimate_analyzer = ImprovedUltimateStrategyAnalyzer(analyzer)
+            ultimate_analyzer = FixedUltimateStrategyAnalyzer(analyzer)
             
             # Progress callback
             def progress_callback(message: str, progress: int):
                 logger.info(f"[{progress}%] {message}")
             
             # Run the analysis
-            logger.info("Running Ultimate Strategy (this will take 2-3 hours)...")
+            logger.info("Running FIXED Ultimate Strategy (optimized: ~45 minutes)...")
             final_recommendations = ultimate_analyzer.run_ultimate_strategy(
                 progress_callback=progress_callback
             )
@@ -389,15 +390,16 @@ class AutomatedUltimateStrategyScheduler:
         Start the scheduler to run daily at 6am Eastern
         """
         logger.info("=" * 80)
-        logger.info("AUTOMATED ULTIMATE STRATEGY SCHEDULER STARTED")
+        logger.info("AUTOMATED ULTIMATE STRATEGY SCHEDULER STARTED (FIXED VERSION)")
         logger.info("=" * 80)
-        logger.info(f"Schedule: Daily at 6:00 AM Eastern Time (Mon-Fri only)")
+        logger.info(f"Schedule: Daily at 4:30 AM Eastern Time (Mon-Fri only) - BEFORE MARKET OPEN")
+        logger.info(f"Runtime: ~45 minutes (optimized from 8+ hours)")
         logger.info(f"Project Path: {self.project_path}")
         logger.info(f"Results Directory: {self.results_dir}")
         logger.info("=" * 80)
         
-        # Schedule the job for 6am Eastern
-        schedule.every().day.at("06:00").do(self.daily_job)
+        # Schedule the job for 4:30am Eastern (before market open at 9:30am)
+        schedule.every().day.at("04:30").do(self.daily_job)
         
         logger.info("Scheduler is running. Press Ctrl+C to stop.")
         logger.info(f"Next run scheduled for: {schedule.next_run()}")

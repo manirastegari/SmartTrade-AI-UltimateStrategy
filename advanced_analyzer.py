@@ -67,9 +67,9 @@ class AdvancedTradingAnalyzer:
         self._indicator_cache = {}
         self._analysis_cache = {}
         
-        # Determine optimal worker count
+        # Determine optimal worker count (OPTIMIZED for speed)
         self.cpu_count = multiprocessing.cpu_count()
-        self.max_workers = min(self.cpu_count * 2, 32)  # Cap at 32 to avoid resource exhaustion
+        self.max_workers = min(self.cpu_count * 4, 64)  # Increased to 64 for better throughput
         
         print(f"🚀 Optimizer: Using {self.max_workers} workers (CPU cores: {self.cpu_count})")
         print("🛡️ Data integrity validation: ENABLED (synthetic data blocked)")
@@ -393,17 +393,80 @@ class AdvancedTradingAnalyzer:
             # Get analyst price target (ignored in light mode)
             analyst_target = analyst.get('price_target', 0)
             
-            # Calculate multiple price targets
-            technical_target = current_price * (1 + prediction_result['prediction'] / 100)
+            # Calculate REALISTIC upside based on multiple factors
+            # Base upside from technical strength, momentum, and fundamentals
+            base_upside = 0.0
             
-            # Combine targets (skip analyst target in light mode)
-            if getattr(self, 'data_mode', 'light') != 'light' and analyst_target > 0:
-                combined_target = (technical_target * 0.6 + analyst_target * 0.4)
+            # Factor 1: Technical score contribution (0-25%)
+            if technical_score > 80:
+                base_upside += 25.0
+            elif technical_score > 70:
+                base_upside += 20.0
+            elif technical_score > 60:
+                base_upside += 15.0
+            elif technical_score > 50:
+                base_upside += 10.0
             else:
-                combined_target = technical_target
+                base_upside += 5.0
             
-            # Calculate upside/downside potential
-            upside_potential = ((combined_target - current_price) / current_price) * 100
+            # Factor 2: Fundamental score contribution (0-15%)
+            if fundamental_score > 80:
+                base_upside += 15.0
+            elif fundamental_score > 70:
+                base_upside += 12.0
+            elif fundamental_score > 60:
+                base_upside += 8.0
+            else:
+                base_upside += 5.0
+            
+            # Factor 3: Momentum score contribution (0-20%)
+            if momentum_score > 80:
+                base_upside += 20.0
+            elif momentum_score > 70:
+                base_upside += 15.0
+            elif momentum_score > 60:
+                base_upside += 10.0
+            else:
+                base_upside += 5.0
+            
+            # Factor 4: Overall score multiplier
+            score_multiplier = 1.0
+            if overall_score > 85:
+                score_multiplier = 1.3  # Strong buy - boost by 30%
+            elif overall_score > 75:
+                score_multiplier = 1.2  # Buy - boost by 20%
+            elif overall_score > 65:
+                score_multiplier = 1.1  # Moderate buy - boost by 10%
+            
+            # Apply multiplier
+            base_upside *= score_multiplier
+            
+            # Factor 5: Market regime adjustment
+            if market_regime == 'BULL':
+                base_upside *= 1.2
+            elif market_regime == 'BEAR':
+                base_upside *= 0.8
+            
+            # Factor 6: Use analyst target if available (in full mode)
+            if getattr(self, 'data_mode', 'light') != 'light' and analyst_target > 0:
+                analyst_upside = ((analyst_target - current_price) / current_price) * 100
+                # Blend analyst target with our calculation (40% analyst, 60% our model)
+                upside_potential = (base_upside * 0.6) + (analyst_upside * 0.4)
+            else:
+                upside_potential = base_upside
+            
+            # Ensure minimum upside for strong recommendations
+            if recommendation['action'] == 'STRONG BUY' and upside_potential < 15.0:
+                upside_potential = 15.0 + (overall_score - 70) * 0.5  # Scale with score
+            elif recommendation['action'] == 'BUY' and upside_potential < 10.0:
+                upside_potential = 10.0
+            
+            # Cap maximum upside at reasonable levels
+            upside_potential = min(upside_potential, 200.0)  # Max 200% for safety
+            
+            # Calculate target price from upside
+            technical_target = current_price * (1 + upside_potential / 100)
+            combined_target = technical_target
             
             # Professional risk-adjusted target
             risk_multiplier = regime_risk_mult
@@ -412,7 +475,7 @@ class AdvancedTradingAnalyzer:
             elif analysis['risk_level'] == 'Low':
                 risk_multiplier *= 1.05
             
-            adjusted_target = current_price * (1 + (prediction_result['prediction'] / 100) * risk_multiplier)
+            adjusted_target = current_price * (1 + (upside_potential / 100) * risk_multiplier)
             adjusted_upside = ((adjusted_target - current_price) / current_price) * 100
             stop_loss_price = current_price * 0.95  # 5% stop loss
             downside_risk = -5.0  # Maximum acceptable loss
@@ -475,8 +538,8 @@ class AdvancedTradingAnalyzer:
                     print("Failed to train models. Using simple predictions.")
             
             symbols = (symbols or self.stock_universe)[:max_stocks]
-            # Bulk fetch OHLCV once for all symbols
-            hist_map = self.data_fetcher.get_bulk_history(symbols, period="2y", interval="1d")
+            # Bulk fetch OHLCV once for all symbols (OPTIMIZED: 1 year instead of 2 for speed)
+            hist_map = self.data_fetcher.get_bulk_history(symbols, period="1y", interval="1d")
             
             # Prefill missing histories with per-symbol yfinance, then free Stooq fallback before threading
             try:
@@ -585,8 +648,8 @@ class AdvancedTradingAnalyzer:
             optimal_workers = min(self.max_workers, len(valid_symbols))
             print(f"🔧 Using {optimal_workers} parallel workers")
             
-            # Process in batches to avoid memory issues
-            batch_size = max(50, optimal_workers * 2)
+            # Process in batches to avoid memory issues (OPTIMIZED: larger batches)
+            batch_size = max(100, optimal_workers * 4)  # Larger batches for better performance
             
             start_time = time.time()
             processed = 0
@@ -604,8 +667,8 @@ class AdvancedTradingAnalyzer:
                                 results.append(res)
                             processed += 1
                             
-                            # Progress update every 10 stocks
-                            if processed % 10 == 0:
+                            # Progress update every 25 stocks (reduce console spam)
+                            if processed % 25 == 0:
                                 elapsed = time.time() - start_time
                                 rate = processed / elapsed
                                 eta = (len(valid_symbols) - processed) / rate if rate > 0 else 0

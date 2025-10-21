@@ -15,7 +15,7 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL)
 
 from advanced_analyzer import AdvancedTradingAnalyzer
-from ultimate_strategy_analyzer_improved import ImprovedUltimateStrategyAnalyzer
+from ultimate_strategy_analyzer_fixed import FixedUltimateStrategyAnalyzer
 from tfsa_questrade_750_universe import get_full_universe
 
 # Professional Trading Interface - Like Goldman Sachs, JP Morgan, Citadel
@@ -494,8 +494,8 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
         st.markdown("# 🏆 ULTIMATE STRATEGY - AUTOMATED 4-STRATEGY CONSENSUS")
         st.markdown("### Running all 4 optimal strategies automatically...")
         
-        # Initialize IMPROVED Ultimate Strategy Analyzer (true consensus)
-        ultimate_analyzer = ImprovedUltimateStrategyAnalyzer(analyzer)
+        # Initialize FIXED Ultimate Strategy Analyzer (optimized - 45 min instead of 8+ hours)
+        ultimate_analyzer = FixedUltimateStrategyAnalyzer(analyzer)
         
         # Progress tracking
         progress_bar = st.progress(0)

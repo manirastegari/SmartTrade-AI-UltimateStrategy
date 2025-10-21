@@ -6,28 +6,37 @@ NOW USES QUESTRADE-VALID UNIVERSE (800+ stocks)
 """
 
 def get_cleaned_high_potential_universe():
-    """Get cleaned universe with problematic stocks removed - uses Questrade-valid universe"""
+    """Get cleaned universe with problematic stocks removed - uses TFSA/Questrade 750+ optimized universe"""
     
-    # Import the Questrade-valid universe
+    # Import the TFSA/Questrade optimized universe (750+ stocks)
     try:
-        from questrade_valid_universe import get_questrade_valid_universe
-        return get_questrade_valid_universe()
+        from tfsa_questrade_750_universe import get_full_universe
+        universe = get_full_universe()
+        print(f"✅ Loaded TFSA/Questrade universe: {len(universe)} stocks")
+        return universe
     except ImportError:
-        # Fallback to a minimal safe universe
-        print("⚠️ Warning: Could not import questrade_valid_universe, using fallback")
-        return [
-            # S&P 500 Top 100 (all valid)
-            'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'AVGO',
-            'LLY', 'JPM', 'V', 'UNH', 'XOM', 'MA', 'ORCL', 'HD', 'PG', 'COST',
-            'JNJ', 'ABBV', 'NFLX', 'BAC', 'CRM', 'CVX', 'MRK', 'KO', 'ADBE', 'WMT',
-            'PEP', 'TMO', 'CSCO', 'MCD', 'ABT', 'ACN', 'LIN', 'AMD', 'INTC', 'QCOM',
-            'DHR', 'PM', 'TXN', 'INTU', 'AMGN', 'GE', 'ISRG', 'IBM', 'CAT', 'CMCSA',
-            'VZ', 'AMAT', 'RTX', 'HON', 'T', 'SPGI', 'LOW', 'NOW', 'PFE', 'NEE',
-            'UNP', 'SYK', 'AXP', 'BKNG', 'PLD', 'MS', 'BLK', 'ETN', 'TJX', 'VRTX',
-            'LRCX', 'BSX', 'REGN', 'C', 'GILD', 'SCHW', 'ADI', 'DE', 'PANW', 'MMC',
-            'KLAC', 'MU', 'CB', 'SO', 'FI', 'MDLZ', 'DUK', 'EQIX', 'SNPS', 'SLB',
-            'PGR', 'ICE', 'BMY', 'PYPL', 'CME', 'APH', 'WM', 'AON', 'MCO', 'USB',
-        ]
+        # Fallback to questrade valid universe
+        try:
+            from questrade_valid_universe import get_questrade_valid_universe
+            universe = get_questrade_valid_universe()
+            print(f"✅ Loaded Questrade valid universe: {len(universe)} stocks")
+            return universe
+        except ImportError:
+            # Fallback to a minimal safe universe
+            print("⚠️ Warning: Could not import universe files, using fallback (100 stocks)")
+            return [
+                # S&P 500 Top 100 (all valid)
+                'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'AVGO',
+                'LLY', 'JPM', 'V', 'UNH', 'XOM', 'MA', 'ORCL', 'HD', 'PG', 'COST',
+                'JNJ', 'ABBV', 'NFLX', 'BAC', 'CRM', 'CVX', 'MRK', 'KO', 'ADBE', 'WMT',
+                'PEP', 'TMO', 'CSCO', 'MCD', 'ABT', 'ACN', 'LIN', 'AMD', 'INTC', 'QCOM',
+                'DHR', 'PM', 'TXN', 'INTU', 'AMGN', 'GE', 'ISRG', 'IBM', 'CAT', 'CMCSA',
+                'VZ', 'AMAT', 'RTX', 'HON', 'T', 'SPGI', 'LOW', 'NOW', 'PFE', 'NEE',
+                'UNP', 'SYK', 'AXP', 'BKNG', 'PLD', 'MS', 'BLK', 'ETN', 'TJX', 'VRTX',
+                'LRCX', 'BSX', 'REGN', 'C', 'GILD', 'SCHW', 'ADI', 'DE', 'PANW', 'MMC',
+                'KLAC', 'MU', 'CB', 'SO', 'FI', 'MDLZ', 'DUK', 'EQIX', 'SNPS', 'SLB',
+                'PGR', 'ICE', 'BMY', 'PYPL', 'CME', 'APH', 'WM', 'AON', 'MCO', 'USB',
+            ]
 
 if __name__ == "__main__":
     universe = get_cleaned_high_potential_universe()

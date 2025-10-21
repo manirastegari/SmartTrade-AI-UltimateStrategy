@@ -1,33 +1,32 @@
-# 🚀 SmartTrade AI - Version 3.0: Professional Trading Intelligence
+# 🚀 SmartTrade AI Ultimate Strategy - V4.0 Optimized
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-red)](https://streamlit.io)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Latest-red)](https://streamlit.io)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.0-orange)](CHANGELOG_V3.0.md)
-[![TFSA](https://img.shields.io/badge/TFSA-Optimized-green)](https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/tax-free-savings-account.html)
-[![Questrade](https://img.shields.io/badge/Questrade-Compatible-blue)](https://www.questrade.com/)
+[![Version](https://img.shields.io/badge/Version-4.0-orange)](.)
+[![TFSA](https://img.shields.io/badge/TFSA-100%25-green)](https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/tax-free-savings-account.html)
+[![Questrade](https://img.shields.io/badge/Questrade-Ready-blue)](https://www.questrade.com/)
+[![Runtime](https://img.shields.io/badge/Runtime-45min-success)]()
+[![Success Rate](https://img.shields.io/badge/Success-100%25-brightgreen)]()
 
 **Created by: Mani Rastegari**  
 **Email: mani.rastegari@gmail.com**
 
-## 🎯 **What's New in Version 3.0**
+## 🎯 **What's New in Version 4.0 (October 2025)**
 
-**Professional-grade AI trading system with institutional accuracy and Canadian TFSA optimization!**
+**10x faster, 100% reliable, automated daily analysis before market open!**
 
-### **🚀 Revolutionary Enhancements**
-- **🏆 6 Analysis Types**: Ultimate Strategy (automated consensus) + 5 professional analysis modes
-- **📊 716-Stock Universe**: 5-2000%+ profit potential across all market caps
-- **🇨🇦 TFSA Optimized**: 100% Canadian tax-free trading compatible
-- **🎯 Questrade Ready**: All stocks available on Canada's leading platform
-- **⚡ 5x Performance**: Optimized ML models, 15-30 min analysis (was 3-4 hours)
+### **⚡ V4.0 Major Optimizations**
+- **🚀 10x Faster**: 45 minutes (was 8+ hours) - single analysis with 4 perspectives
+- **📊 737 Valid Stocks**: 100% success rate, removed 42 failed/delisted symbols
+- **🎯 50% Stricter**: Higher quality picks (82+ score for STRONG BUY, was 75+)
+- **⏰ 4:30 AM Scheduler**: Automated daily runs before market open (9:30 AM)
+- **📈 Ultimate Strategy**: 4-strategy consensus (Institutional, Hedge Fund, Quant Value, Risk Managed)
+- **💾 Auto Excel Export**: Results pushed to GitHub automatically
+- **🇨🇦 100% TFSA Compatible**: All stocks tradeable in Canadian tax-free accounts
+- **🎯 Questrade Ready**: Every stock available for immediate trading
 - **🛡️ Real Data Only**: Zero synthetic data, institutional-grade accuracy
-- **📈 Smart Recommendations**: Realistic thresholds, only positive returns
-- **💾 Auto Excel Export**: Automatic professional reporting after each analysis
-- **💎 Hidden Gem Coverage**: 100% capture of high-potential categories
-- **🌐 Macro + Breadth Overlay (New)**: One-shot macro context and internal breadth integrated directly into scoring and UI
-- **🧭 Market Health Panel (New)**: Overlay score, Advancers %, % Above 50/200 SMA, VIX and Yield Curve in the Professional Terminal
-- **📈 New Zero-Cost Indicators (New)**: SuperTrend, Donchian Channels, Keltner Channels used in signals and technical scoring
-- **🧠 ML Training Toggle (New)**: Optional model training to learn from macro + breadth + indicators for higher-accuracy predictions
+- **💰 Cost**: $0/month (100% free APIs)
 
 A comprehensive, AI-powered trading analysis platform that provides real-time stock market analysis and trading recommendations for US and Canadian markets. **Perfect for TFSA investing** with institutional-grade analysis that costs **$0/month** using only free data sources.
 
@@ -46,15 +45,15 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 - **Risk Assessment** - Evaluates risk levels for each stock
 - **Professional Dashboard** - Interactive charts and comprehensive metrics
 
-### 📊 **Revolutionary Coverage (V3.0)**
-- **716 High-Potential Stocks** - Optimized universe targeting 5-2000%+ returns
-- **All Market Caps** - Mega-cap stability to explosive penny stock potential
+### 📊 **Ultimate Strategy Coverage (V4.0)**
+- **737 Validated Stocks** - 100% success rate, all failed symbols removed
+- **4-Strategy Consensus** - Institutional, Hedge Fund, Quant Value, Risk Managed
 - **🇨🇦 TFSA Perfection** - 100% Canadian tax-free account compatible
 - **🎯 Questrade Ready** - All stocks available on Canada's top platform
-- **Cleaned Universe** - Removed 22 delisted/problematic stocks, added 27 quality replacements
-- **98%+ Success Rate** - Eliminated data failures for reliable analysis
-- **💾 Excel Export** - Professional reporting with detailed analysis results
-- **Real-time Updates** - Fresh data with multiple fallback sources
+- **Optimized Universe** - Removed 42 delisted/unavailable stocks for reliability
+- **100% Success Rate** - Zero data failures, institutional-grade accuracy
+- **💾 Auto Excel Export** - Professional reporting with GitHub push
+- **⏰ Automated Daily Runs** - 4:30 AM ET analysis, results before market open
 
 ### 💰 **Cost: $0/month**
 - Uses only free APIs (Yahoo Finance, Google News)
@@ -65,39 +64,45 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 
 ## ⚡ Quick Start (TL;DR)
 
-### **🚀 V3.0 Professional Terminal (Recommended)**
+### **🚀 V4.0 Ultimate Strategy (Recommended)**
 ```bash
-git clone https://github.com/yourusername/SmartTrade-AI.git
-cd SmartTrade-AI
+git clone https://github.com/manirastegari/SmartTrade-AI-UltimateStrategy.git
+cd SmartTrade-AI-UltimateStrategy
 pip install -r requirements.txt
-streamlit run professional_trading_app.py
+streamlit run professional_trading_app.py --server.port 8502
 ```
 
-### **🎯 New V3.0 Features**
-- **716-Stock Universe**: Optimized for 5-2000%+ profit potential
-- **🇨🇦 TFSA Optimization**: Perfect for Canadian tax-free investing
-- **⚡ 5x Performance**: 15-30 min analysis (was 3-4 hours)
-- **🛡️ Real Data Only**: Zero synthetic data, institutional accuracy
-- **📈 Smart Thresholds**: Realistic buy signals, 17%+ recommendation rate
-- **💾 Excel Export**: Professional reporting and portfolio tracking
-- **98%+ Success Rate**: Cleaned universe, reliable data sources
-- **🎯 Questrade Ready**: All stocks available for immediate trading
-- **Candlestick Patterns**: Doji, Engulfing, Morning Star signals
-- **Strategic Signals**: Golden Cross, Death Cross, Mean Reversion, Breakouts
-- **Complete Fundamental Analysis**: 100% coverage of professional ratios
+### **🎯 V4.0 Key Features**
+- **737-Stock Universe**: 100% success rate, all validated and tradeable
+- **⚡ 10x Faster**: 45 minutes (was 8+ hours)
+- **🏆 Ultimate Strategy**: 4-strategy consensus for highest confidence
+- **🎯 50% Stricter**: 82+ score for STRONG BUY (higher quality picks)
+- **⏰ Auto Scheduler**: Daily 4:30 AM analysis before market open
+- **💾 Auto Export**: Excel + GitHub push automatically
+- **100% Success Rate**: Zero failures, institutional reliability
+- **🇨🇦 TFSA Optimized**: All stocks Canadian tax-free compatible
+- **Expected Results**: 25-35 recommendations per run (was 50+)
+- **4 Agreement Tiers**: 4/4, 3/4, 2/4, 1/4 strategies agreeing
 
-Open `http://localhost:8501` in your browser.
+Open `http://localhost:8502` in your browser.
 
-## 🧭 How to Use (Very Brief)
+## 🧭 How to Use
 
-### **V3.0 Professional Terminal:**
-1. **Set Analysis Size**: Use slider to select up to 716 stocks for maximum coverage
-2. **Choose Parameters**: Cap Filter + Market Focus + Analysis Type + Risk Level
-3. **🇨🇦 TFSA Mode**: Enable for Canadian tax-free account optimization
-4. **Run Analysis**: Click "🚀 Run Professional Analysis" (15-30 min)
-5. **Review Results**: 98%+ success rate, realistic buy signals
-6. **Export to Excel**: Professional reporting with 8 detailed sheets
-7. **Trade on Questrade**: All stocks available for immediate trading
+### **V4.0 Ultimate Strategy:**
+1. **Select Analysis Type**: Choose "🏆 Ultimate Strategy (4-Strategy Consensus)"
+2. **Run Analysis**: Click "🚀 Run Professional Analysis" (~45 minutes)
+3. **Review 4 Tiers**:
+   - **Tier 1 (4/4)**: All 4 strategies agree - LOWEST RISK (~10 stocks)
+   - **Tier 2 (3/4)**: 3 strategies agree - LOW RISK (~5-10 stocks)
+   - **Tier 3 (2/4)**: 2 strategies agree - MEDIUM RISK (~10-15 stocks)
+   - **Tier 4 (1/4)**: 1 strategy recommends - HIGHER RISK (~10+ stocks)
+4. **Auto Excel Export**: Results automatically saved to `exports/` folder
+5. **Trade on Questrade**: All 737 stocks available for immediate trading
+
+### **Automated Daily Runs:**
+- Scheduler runs at **4:30 AM ET** every weekday
+- Results ready by **~5:15 AM** (before 9:30 AM market open)
+- Excel exported to `daily_results/` and pushed to GitHub
 
 ### **Results to Focus On:**
 - **Current Prices**: Real-time stock prices

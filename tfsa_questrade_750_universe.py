@@ -24,24 +24,24 @@ TFSA_QUESTRADE_UNIVERSE = {
         
         # Semiconductor Leaders (25)
         'ADI', 'KLAC', 'LRCX', 'MU', 'AMAT', 'MCHP', 'NXPI', 'MRVL',
-        'MPWR', 'ON', 'SWKS', 'QRVO', 'WOLF', 'ENTG', 'TER', 'STX',
+        'MPWR', 'ON', 'SWKS', 'QRVO', 'ENTG', 'TER', 'STX',
         'WDC', 'SMCI', 'NVDA', 'TSM', 'ASML', 'UMC', 'GFS', 'SLAB', 'CRUS',
         
         # Software & Cloud (35)
-        'PANW', 'SNPS', 'CDNS', 'ANSS', 'ADSK', 'WDAY', 'TEAM', 'DDOG',
+        'PANW', 'SNPS', 'CDNS', 'ADSK', 'WDAY', 'TEAM', 'DDOG',
         'SNOW', 'CRWD', 'ZS', 'NET', 'OKTA', 'MDB', 'PLTR', 'FTNT',
         'CYBR', 'S', 'CFLT', 'GTLB', 'ESTC', 'PATH', 'TENB', 'HUBS',
-        'ZM', 'DOCU', 'TWLO', 'VEEV', 'SPLK', 'RNG', 'QLYS', 'VRNS',
+        'ZM', 'DOCU', 'TWLO', 'VEEV', 'RNG', 'QLYS', 'VRNS',
         'PAYC', 'PCTY', 'APPF',
         
         # IT Services & Hardware (25)
-        'CTSH', 'IT', 'GLW', 'HPQ', 'DELL', 'NTAP', 'FFIV', 'JNPR',
+        'CTSH', 'IT', 'GLW', 'HPQ', 'DELL', 'NTAP', 'FFIV',
         'AKAM', 'VRSN', 'GDDY', 'PTC', 'KEYS', 'FICO', 'BR', 'EPAM',
         'GEN', 'JKHY', 'TRMB', 'ZBRA', 'TYL', 'SSNC', 'MANH', 'CVLT', 'BSY',
         
         # Emerging Tech (15)
         'ANET', 'CIEN', 'LITE', 'AMBA', 'SMCI', 'IONQ', 'RGTI', 'QUBT',
-        'SOUN', 'BBAI', 'AI', 'C3AI', 'UPST', 'SOFI', 'AFRM'
+        'SOUN', 'BBAI', 'AI', 'UPST', 'SOFI', 'AFRM'
     ],
     
     # ========================================================================
@@ -62,8 +62,8 @@ TFSA_QUESTRADE_UNIVERSE = {
         # Biotech Leaders (30)
         'VRTX', 'REGN', 'MRNA', 'ALNY', 'BMRN', 'INCY', 'EXAS', 'SRPT',
         'UTHR', 'NBIX', 'IONS', 'ARGX', 'ARWR', 'CRSP', 'NTLA', 'EDIT',
-        'BEAM', 'VERV', 'BLUE', 'FOLD', 'RGNX', 'RARE', 'SAGE', 'ACAD',
-        'HALO', 'EXEL', 'BPMC', 'NTRA', 'ARVN', 'KYMR',
+        'BEAM', 'FOLD', 'RGNX', 'RARE', 'ACAD',
+        'HALO', 'EXEL', 'NTRA', 'ARVN', 'KYMR',
         
         # Healthcare Services (15)
         'HCA', 'IQV', 'HUM', 'CNC', 'CI', 'CVS', 'ELV', 'MOH',
@@ -81,7 +81,7 @@ TFSA_QUESTRADE_UNIVERSE = {
     'large_cap_energy': [
         # Oil & Gas Majors (25)
         'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX', 'VLO',
-        'OXY', 'HES', 'FANG', 'DVN', 'MRO', 'APA', 'CTRA', 'HAL',
+        'OXY', 'FANG', 'DVN', 'APA', 'CTRA', 'HAL',
         'BKR', 'NOV', 'FTI', 'RIG', 'VAL', 'MTDR', 'MUR', 'SM', 'AR',
         
         # Midstream & Infrastructure (15)
@@ -208,8 +208,8 @@ TFSA_QUESTRADE_UNIVERSE = {
     'mid_cap_healthcare': [
         # Biotech (35)
         'GMED', 'EXEL', 'HALO', 'IONS', 'GKOS', 'INSP', 'MMSI', 'HAE',
-        'ALKS', 'PBH', 'AXNX', 'LIVN', 'PRGO', 'OGN', 'CNMD', 'ATRC',
-        'NARI', 'LMAT', 'NVCR', 'ATRI', 'ICUI', 'CERT', 'OMCL', 'SILK',
+        'ALKS', 'PBH', 'LIVN', 'PRGO', 'OGN', 'CNMD', 'ATRC',
+        'LMAT', 'NVCR', 'ICUI', 'CERT', 'OMCL',
         'ANGO', 'VCYT', 'AORT', 'ANIK', 'AVNS', 'OFIX', 'SRDX', 'TCMD',
         'VREX', 'DAKT', 'KNSA',
         
@@ -218,8 +218,8 @@ TFSA_QUESTRADE_UNIVERSE = {
         'TLSA', 'PVLA', 'OKYO', 'USAS', 'RDZN', 'SNYR', 'MYSE',
         
         # Healthcare Services (10)
-        'ENSG', 'AMED', 'ACHC', 'NHC', 'PNTG', 'CLOV', 'OSCR', 'TDOC',
-        'ONEM', 'HIMS'
+        'ENSG', 'ACHC', 'NHC', 'PNTG', 'CLOV', 'OSCR', 'TDOC',
+        'HIMS'
     ],
     
     # ========================================================================
@@ -230,15 +230,15 @@ TFSA_QUESTRADE_UNIVERSE = {
         # E&P & Services (20)
         'CHRD', 'CNX', 'NOG', 'KOS', 'TALO', 'CRK', 'GPOR', 'REI',
         'VTLE', 'PR', 'MTDR', 'MUR', 'SM', 'CIVI', 'MGY', 'CRGY',
-        'ESTE', 'REPX', 'NEXT', 'TUSK',
+        'REPX', 'NEXT', 'TUSK',
         
         # Clean Energy (15)
-        'GRID.TO', 'ANRG.TO', 'CVW.TO', 'RNW.TO', 'INE.TO', 'BLX.TO',
-        'BEPC', 'AQN', 'CWEN', 'NEP', 'PEGI', 'HASI', 'RUN', 'NOVA', 'ARRY',
+        'GRID.TO', 'ANRG.TO', 'BLX.TO',
+        'BEPC', 'AQN', 'CWEN', 'HASI', 'RUN', 'NOVA', 'ARRY',
         
         # EV & Charging (15)
-        'EVGO', 'CHPT', 'BLNK', 'LCID', 'RIVN', 'FSR', 'QS', 'GOEV',
-        'WKHS', 'RIDE', 'HYLN', 'NKLA', 'ARVL', 'MULN', 'FFIE'
+        'EVGO', 'CHPT', 'BLNK', 'LCID', 'RIVN', 'QS', 'GOEV',
+        'WKHS', 'HYLN'
     ],
     
     # ========================================================================
@@ -247,12 +247,12 @@ TFSA_QUESTRADE_UNIVERSE = {
     # ========================================================================
     'mid_cap_financials': [
         # Regional Banks (15)
-        'WAL', 'PACW', 'WTFC', 'UBSI', 'ONB', 'UMBF', 'FFIN', 'CBSH',
+        'WAL', 'WTFC', 'UBSI', 'ONB', 'UMBF', 'FFIN', 'CBSH',
         'FULT', 'BPOP', 'OZK', 'SFNC', 'CATY', 'BANR', 'TBBK',
         
         # Insurance (15)
         'RYAN', 'BRO', 'AJG', 'AON', 'MMC', 'ERIE', 'SIGI', 'RLI',
-        'AFG', 'FNF', 'CNA', 'RNR', 'Y', 'KNSL', 'EG',
+        'AFG', 'FNF', 'CNA', 'RNR', 'KNSL', 'EG',
         
         # Fintech & Others (10)
         'SOFI', 'AFRM', 'UPST', 'LC', 'LPRO', 'TREE', 'OPFI', 'ENVA',
@@ -265,12 +265,12 @@ TFSA_QUESTRADE_UNIVERSE = {
     # ========================================================================
     'mid_cap_consumer': [
         # Specialty Retail (20)
-        'CASY', 'WSM', 'FLO', 'ELF', 'CALM', 'JJSF', 'LANC', 'SMPL',
-        'USNA', 'CVLG', 'DSKE', 'PTSI', 'ULH', 'HTLD', 'MRTN', 'SNDR',
+        'CASY', 'WSM', 'FLO', 'ELF', 'CALM', 'JJSF', 'SMPL',
+        'USNA', 'CVLG', 'ULH', 'HTLD', 'MRTN', 'SNDR',
         'ARCB', 'WERN', 'MATX', 'HUBG',
         
         # Consumer Products (10)
-        'IPAR', 'COTY', 'EPC', 'HAIN', 'JBSS', 'BGFV', 'HIBB', 'SCVL',
+        'IPAR', 'COTY', 'EPC', 'HAIN', 'JBSS', 'BGFV', 'SCVL',
         'PSMT', 'REVG',
         
         # Restaurants (10)
@@ -290,11 +290,11 @@ TFSA_QUESTRADE_UNIVERSE = {
         # Biotech (20)
         'ABVX', 'ACLX', 'PTGX', 'ASND', 'OMER', 'VERI', 'SNYR', 'MYSE',
         'RDZN', 'TLSA', 'PVLA', 'OKYO', 'USAS', 'KROS', 'CGEM', 'IMVT',
-        'KYMR', 'VERV', 'BEAM', 'CRBU',
+        'KYMR', 'BEAM', 'CRBU',
         
         # Tech & Software (15)
-        'POET', 'PXLW', 'EMAN', 'RESN', 'SQNS', 'MRAM', 'ATOM', 'PRSO',
-        'SKYT', 'INDI', 'NVEC', 'QUIK', 'NPTN', 'DSPG', 'EMKR'
+        'POET', 'PXLW', 'SQNS', 'MRAM', 'ATOM', 'PRSO',
+        'SKYT', 'INDI', 'NVEC', 'QUIK'
     ],
     
     # ========================================================================
@@ -303,7 +303,7 @@ TFSA_QUESTRADE_UNIVERSE = {
     # ========================================================================
     'canadian_tsx': [
         # Tech & E-commerce
-        'SHOP.TO', 'LSPD.TO', 'DCBO.TO', 'GDNP.TO', 'TOI.TO',
+        'SHOP.TO', 'LSPD.TO', 'DCBO.TO',
         
         # Financials
         'RY.TO', 'TD.TO', 'BMO.TO', 'BNS.TO', 'CM.TO', 'NA.TO',
