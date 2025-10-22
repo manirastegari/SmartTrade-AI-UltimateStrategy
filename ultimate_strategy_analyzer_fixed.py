@@ -303,7 +303,7 @@ class FixedUltimateStrategyAnalyzer:
             score_std = np.std(scores) if len(scores) > 1 else 0
             
             # Count how many strategies recommend BUY or STRONG BUY
-            buy_count = sum(1 for rec in recommendations if 'BUY' in rec)
+            buy_count = sum(1 for rec in recommendations if rec in ('BUY', 'STRONG BUY'))
             strong_buy_count = sum(1 for rec in recommendations if rec == 'STRONG BUY')
             
             # Consensus strength (0-100)
