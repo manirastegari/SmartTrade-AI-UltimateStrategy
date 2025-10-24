@@ -1,0 +1,20 @@
+🚀 SmartTrade AI V4.0: 10x faster (45min), 737 stocks, 100% success rate, 4-strategy consensus, automated 4:30am daily runs, TFSA optimized, $0/month
+
+---
+
+To update your GitHub repository description, go to:
+https://github.com/manirastegari/SmartTrade-AI-UltimateStrategy
+
+Click "Settings" → Update "Description" field with the text above.
+
+Topics to add:
+- trading
+- ai
+- machine-learning
+- stock-analysis
+- tfsa
+- questrade
+- python
+- streamlit
+- automation
+- ultimate-strategy

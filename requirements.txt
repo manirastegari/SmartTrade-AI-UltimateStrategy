@@ -15,6 +15,14 @@ lightgbm>=4.1.0
 # Technical Analysis
 pandas-ta>=0.3.14b0
 
+# Sentiment Analysis (IMPROVED!)
+vaderSentiment>=3.3.2
+textblob>=0.17.1
+
+# Web Scraping
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+
 # Utilities
 python-dotenv>=1.0.0
 schedule>=1.2.0

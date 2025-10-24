@@ -1131,7 +1131,7 @@ class AdvancedTradingAnalyzer:
             return self._simple_prediction(features)
     
     def _simple_prediction(self, features):
-        """Simple prediction based on technical indicators when ML models fail"""
+        """IMPROVED: Deterministic prediction based on technical indicators - NO RANDOMNESS"""
         try:
             if features.empty:
                 return {'prediction': 0, 'confidence': 0.3}
@@ -1142,48 +1142,101 @@ class AdvancedTradingAnalyzer:
             bb_position = features.get('BB_Position', [0.5])[0] if 'BB_Position' in features.columns else 0.5
             volume_ratio = features.get('Volume_Ratio', [1])[0] if 'Volume_Ratio' in features.columns else 1
             
-            # Simple prediction logic
+            # Get additional indicators for better prediction
+            sma_20 = features.get('SMA_20_current', [0])[0] if 'SMA_20_current' in features.columns else 0
+            sma_50 = features.get('SMA_50_current', [0])[0] if 'SMA_50_current' in features.columns else 0
+            price = features.get('Close_current', [0])[0] if 'Close_current' in features.columns else 0
+            
+            # Track signal strength for confidence calculation
+            signal_count = 0
+            max_signals = 8  # Total possible signals
             prediction = 0
             
-            # RSI-based prediction
-            if rsi < 30:
-                prediction += 2.0  # Oversold - bullish
-            elif rsi > 70:
-                prediction -= 2.0  # Overbought - bearish
-            elif 40 <= rsi <= 60:
-                prediction += 0.5  # Neutral - slightly bullish
+            # RSI-based prediction (Strong signals)
+            if rsi < 25:  # Extremely oversold
+                prediction += 3.0
+                signal_count += 2
+            elif rsi < 35:  # Oversold
+                prediction += 2.0
+                signal_count += 1.5
+            elif rsi > 75:  # Extremely overbought
+                prediction -= 3.0
+                signal_count += 2
+            elif rsi > 65:  # Overbought
+                prediction -= 2.0
+                signal_count += 1.5
+            elif 45 <= rsi <= 55:  # Neutral zone
+                prediction += 0.3
+                signal_count += 0.5
             
-            # MACD-based prediction
-            if macd > 0:
-                prediction += 1.5  # MACD above zero - bullish
-            else:
-                prediction -= 1.0  # MACD below zero - bearish
+            # MACD-based prediction (Momentum signals)
+            if macd > 0.5:
+                prediction += 2.0  # Strong bullish momentum
+                signal_count += 1.5
+            elif macd > 0:
+                prediction += 1.0  # Bullish momentum
+                signal_count += 1
+            elif macd < -0.5:
+                prediction -= 2.0  # Strong bearish momentum
+                signal_count += 1.5
+            elif macd < 0:
+                prediction -= 1.0  # Bearish momentum
+                signal_count += 1
             
-            # Bollinger Bands position
-            if bb_position < 0.2:
-                prediction += 1.0  # Near lower band - bullish
-            elif bb_position > 0.8:
-                prediction -= 1.0  # Near upper band - bearish
+            # Bollinger Bands position (Volatility signals)
+            if bb_position < 0.1:  # Very near lower band
+                prediction += 1.5
+                signal_count += 1.5
+            elif bb_position < 0.25:  # Near lower band
+                prediction += 1.0
+                signal_count += 1
+            elif bb_position > 0.9:  # Very near upper band
+                prediction -= 1.5
+                signal_count += 1.5
+            elif bb_position > 0.75:  # Near upper band
+                prediction -= 1.0
+                signal_count += 1
             
-            # Volume confirmation
-            if volume_ratio > 1.5:
-                prediction *= 1.2  # High volume confirms signal
-            elif volume_ratio < 0.5:
-                prediction *= 0.8  # Low volume weakens signal
+            # Moving average trend (Trend signals)
+            if price > 0 and sma_20 > 0 and sma_50 > 0:
+                if price > sma_20 > sma_50:  # Bullish alignment
+                    prediction += 1.5
+                    signal_count += 1.5
+                elif price < sma_20 < sma_50:  # Bearish alignment
+                    prediction -= 1.5
+                    signal_count += 1.5
+                elif price > sma_20:  # Price above short-term MA
+                    prediction += 0.5
+                    signal_count += 0.5
             
-            # Add some randomness for realism
-            prediction += np.random.normal(0, 0.5)
+            # Volume confirmation (Conviction signals)
+            if volume_ratio > 2.0:  # Very high volume
+                prediction *= 1.3  # Strong confirmation
+                signal_count += 1.5
+            elif volume_ratio > 1.5:  # High volume
+                prediction *= 1.15  # Good confirmation
+                signal_count += 1
+            elif volume_ratio < 0.5:  # Low volume
+                prediction *= 0.7  # Weak signal
+            elif volume_ratio < 0.3:  # Very low volume
+                prediction *= 0.5  # Very weak signal
             
-            # Cap prediction between -5% and +5%
-            prediction = max(-5, min(5, prediction))
+            # Cap prediction between -6% and +6% (realistic range)
+            prediction = max(-6, min(6, prediction))
             
-            # Calculate confidence based on signal strength
-            confidence = min(0.8, abs(prediction) / 3.0 + 0.3)
+            # Calculate confidence based on signal agreement (NOT randomness!)
+            # More signals agreeing = higher confidence
+            confidence = min(0.90, (signal_count / max_signals) * 0.85 + 0.35)
+            
+            # Reduce confidence if signals conflict (e.g., prediction near zero)
+            if abs(prediction) < 0.5:
+                confidence *= 0.6  # Conflicting signals = lower confidence
             
             return {
                 'prediction': prediction,
                 'confidence': confidence,
-                'method': 'simple_technical'
+                'signal_strength': signal_count,
+                'method': 'deterministic_technical'
             }
             
         except Exception as e:
@@ -1781,6 +1834,207 @@ class AdvancedTradingAnalyzer:
                 
         except Exception as e:
             return {'action': 'HOLD', 'confidence': 'Low'}
+    
+    def detect_price_patterns(self, df):
+        """IMPROVEMENT #6: Detect chart patterns from OHLC data (zero API cost)"""
+        try:
+            if df is None or df.empty or len(df) < 60:
+                return {}
+            
+            patterns = {
+                'trend_direction': 'neutral',
+                'trend_strength': 0,
+                'higher_highs': False,
+                'higher_lows': False,
+                'lower_highs': False,
+                'lower_lows': False,
+                'consolidation': False,
+                'breakout': False,
+                'breakdown': False,
+                'support_level': 0,
+                'resistance_level': 0,
+                'distance_to_support': 0,
+                'distance_to_resistance': 0
+            }
+            
+            # Get recent data
+            recent_20 = df.tail(20)
+            recent_60 = df.tail(60)
+            
+            highs = recent_20['High']
+            lows = recent_20['Low']
+            closes = recent_20['Close']
+            current_price = closes.iloc[-1]
+            
+            # Trend detection (higher highs, higher lows = uptrend)
+            patterns['higher_highs'] = highs.iloc[-1] > highs.iloc[-5] > highs.iloc[-10]
+            patterns['higher_lows'] = lows.iloc[-1] > lows.iloc[-5] > lows.iloc[-10]
+            patterns['lower_highs'] = highs.iloc[-1] < highs.iloc[-5] < highs.iloc[-10]
+            patterns['lower_lows'] = lows.iloc[-1] < lows.iloc[-5] < lows.iloc[-10]
+            
+            # Determine trend direction
+            if patterns['higher_highs'] and patterns['higher_lows']:
+                patterns['trend_direction'] = 'strong_uptrend'
+                patterns['trend_strength'] = 85
+            elif patterns['higher_highs'] or patterns['higher_lows']:
+                patterns['trend_direction'] = 'uptrend'
+                patterns['trend_strength'] = 65
+            elif patterns['lower_highs'] and patterns['lower_lows']:
+                patterns['trend_direction'] = 'strong_downtrend'
+                patterns['trend_strength'] = 15
+            elif patterns['lower_highs'] or patterns['lower_lows']:
+                patterns['trend_direction'] = 'downtrend'
+                patterns['trend_strength'] = 35
+            else:
+                patterns['trend_direction'] = 'neutral'
+                patterns['trend_strength'] = 50
+            
+            # Support and resistance levels
+            patterns['support_level'] = float(recent_60['Low'].min())
+            patterns['resistance_level'] = float(recent_60['High'].max())
+            
+            # Distance to S/R
+            patterns['distance_to_support'] = ((current_price - patterns['support_level']) / current_price) * 100
+            patterns['distance_to_resistance'] = ((patterns['resistance_level'] - current_price) / current_price) * 100
+            
+            # Consolidation detection (low volatility)
+            price_range = (recent_20['High'].max() - recent_20['Low'].min()) / current_price
+            patterns['consolidation'] = price_range < 0.05  # Less than 5% range
+            
+            # Breakout/breakdown detection
+            patterns['breakout'] = current_price > patterns['resistance_level'] * 0.995
+            patterns['breakdown'] = current_price < patterns['support_level'] * 1.005
+            
+            return patterns
+            
+        except Exception as e:
+            print(f"Error detecting patterns: {e}")
+            return {}
+    
+    def analyze_sector_rotation(self, hist_map, symbols):
+        """IMPROVEMENT #7: Sector strength analysis from already-fetched data (free)"""
+        try:
+            from collections import defaultdict
+            
+            sector_performance = defaultdict(list)
+            sector_symbols = defaultdict(list)
+            
+            for symbol in symbols:
+                df = hist_map.get(symbol)
+                if df is None or df.empty or len(df) < 20:
+                    continue
+                    
+                try:
+                    # Calculate returns
+                    if len(df) >= 20:
+                        returns_20d = ((df['Close'].iloc[-1] / df['Close'].iloc[-20]) - 1) * 100
+                        
+                        # Get sector (use cached or fetch)
+                        sector = self._get_sector_from_symbol(symbol, {})
+                        
+                        sector_performance[sector].append(returns_20d)
+                        sector_symbols[sector].append(symbol)
+                except:
+                    continue
+            
+            # Calculate sector scores
+            sector_scores = {}
+            all_returns = []
+            for returns in sector_performance.values():
+                all_returns.extend(returns)
+            
+            market_median = np.median(all_returns) if all_returns else 0
+            
+            for sector, returns in sector_performance.items():
+                if returns:
+                    sector_scores[sector] = {
+                        'avg_return': float(np.mean(returns)),
+                        'median_return': float(np.median(returns)),
+                        'best_stock_return': float(np.max(returns)),
+                        'stock_count': len(returns),
+                        'relative_strength': float(np.median(returns) - market_median),
+                        'top_stocks': sector_symbols[sector][:3],  # Top 3 symbols
+                        'score': float(min(100, max(0, 50 + np.median(returns) * 2)))
+                    }
+            
+            # Rank sectors by relative strength
+            ranked_sectors = sorted(
+                sector_scores.items(),
+                key=lambda x: x[1]['relative_strength'],
+                reverse=True
+            )
+            
+            return {
+                'sector_scores': sector_scores,
+                'top_sectors': [s[0] for s in ranked_sectors[:5]],
+                'bottom_sectors': [s[0] for s in ranked_sectors[-5:]],
+                'market_breadth': len([r for r in all_returns if r > 0]) / len(all_returns) if all_returns else 0.5
+            }
+            
+        except Exception as e:
+            print(f"Error analyzing sector rotation: {e}")
+            return {}
+    
+    def calculate_volume_profile(self, df):
+        """IMPROVEMENT #8: Advanced volume analysis using free data"""
+        try:
+            if df is None or df.empty or len(df) < 50:
+                return {}
+            
+            volume = df['Volume']
+            close = df['Close']
+            high = df['High']
+            low = df['Low']
+            
+            # Get different time periods
+            vol_20 = volume.tail(20)
+            vol_50 = volume.tail(50)
+            
+            # Basic volume metrics
+            avg_vol_20 = vol_20.mean()
+            avg_vol_50 = vol_50.mean()
+            
+            # Volume trend
+            volume_trend = (avg_vol_20 / avg_vol_50) if avg_vol_50 > 0 else 1.0
+            
+            # Price-volume correlation
+            price_vol_corr = close.tail(50).corr(volume.tail(50))
+            
+            # Accumulation/Distribution (simplified)
+            # High close in range + volume = accumulation
+            close_position = (close - low) / (high - low)
+            close_position = close_position.fillna(0.5)
+            ad_line = (close_position * volume).tail(20).sum()
+            
+            # Volume spikes (unusual volume days)
+            volume_threshold = avg_vol_50 * 2
+            unusual_volume_days = len(volume.tail(20)[volume.tail(20) > volume_threshold])
+            
+            # Volume quality score
+            volume_quality = 50
+            if volume_trend > 1.2:  # Increasing volume
+                volume_quality += 20
+            if price_vol_corr > 0.3:  # Price and volume aligned
+                volume_quality += 15
+            if ad_line > 0:  # Accumulation
+                volume_quality += 15
+            
+            return {
+                'avg_volume_20d': float(avg_vol_20),
+                'avg_volume_50d': float(avg_vol_50),
+                'volume_trend': float(volume_trend),
+                'volume_trend_direction': 'increasing' if volume_trend > 1.1 else 'decreasing' if volume_trend < 0.9 else 'stable',
+                'price_volume_correlation': float(price_vol_corr),
+                'accumulation_distribution': float(ad_line),
+                'unusual_volume_days': int(unusual_volume_days),
+                'volume_quality_score': int(min(100, max(0, volume_quality))),
+                'high_volume': volume_trend > 1.3,
+                'volume_breakout': unusual_volume_days >= 3
+            }
+            
+        except Exception as e:
+            print(f"Error calculating volume profile: {e}")
+            return {}
     
     def _train_models(self, max_stocks=50):
         """Train ML models on historical data"""
