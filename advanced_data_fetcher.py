@@ -1087,14 +1087,28 @@ class AdvancedDataFetcher:
                 # Try yfinance with rate limiting protection
                 hist = self._fetch_yfinance_with_fallback(symbol)
 
-            # Avoid rate-limited ticker.info. Use safe minimal info instead.
-            info = {
-                'marketCap': 0,
-                'trailingPE': 0,
-                'sector': 'Unknown',
-                'beta': 1.0,
-                'debtToEquity': 0.0,
-            }
+            # IMPROVEMENT #4: Use improved fundamentals with caching and backoff
+            # This prevents rate limiting while still getting real data!
+            try:
+                fundamentals = self.get_better_fundamentals(symbol)
+                info = {
+                    'marketCap': fundamentals.get('market_cap', 0),
+                    'trailingPE': fundamentals.get('pe_ratio', 0),
+                    'sector': fundamentals.get('sector', 'Unknown'),
+                    'beta': fundamentals.get('beta', 1.0),
+                    'debtToEquity': fundamentals.get('debt_to_equity', 0.0),
+                    'priceToBook': fundamentals.get('price_to_book', 0),
+                    'dividendYield': fundamentals.get('dividend_yield', 0),
+                }
+            except Exception as e:
+                # Fallback to minimal info if fundamentals fail
+                info = {
+                    'marketCap': 0,
+                    'trailingPE': 0,
+                    'sector': 'Unknown',
+                    'beta': 1.0,
+                    'debtToEquity': 0.0,
+                }
             
             if hist is None or hist.empty:
                 # CRITICAL: Never use synthetic data for real trading analysis
