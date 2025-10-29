@@ -181,3 +181,4 @@ models/
 .env
 secrets.toml
 config.toml
+api_keys.py
