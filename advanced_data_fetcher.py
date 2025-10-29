@@ -40,6 +40,8 @@ class AdvancedDataFetcher:
     """IMPROVED: Advanced data fetcher with caching, backoff, and better data extraction"""
     
     def __init__(self, alpha_vantage_key=None, fred_api_key=None, data_mode: str = "light"):
+        # Verbosity control for per-symbol logging
+        self.verbose = False
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
@@ -49,8 +51,31 @@ class AdvancedDataFetcher:
         self.data_mode = data_mode  # light | balanced | full
 
         # Initialize free APIs
-        self.alpha_vantage_key = alpha_vantage_key
+        # Allow Alpha Vantage key via environment if not provided
+        try:
+            import os as _os
+            _env_key = None
+            if alpha_vantage_key is None:
+                # Support both env var spellings
+                _env_key = (
+                    _os.environ.get('ALPHA_VANTAGE_API_KEY')
+                    or _os.environ.get('ALPHAVANTAGE_API_KEY')
+                )
+        except Exception:
+            _env_key = None
+        _repo_key = None
+        if alpha_vantage_key is None and _env_key is None:
+            try:
+                from api_keys import ALPHA_VANTAGE_API_KEY as _CFG_AV
+                _repo_key = _CFG_AV
+            except Exception:
+                _repo_key = None
+        self.alpha_vantage_key = alpha_vantage_key or _env_key or _repo_key
         self.fred_api_key = fred_api_key
+        if self.alpha_vantage_key:
+            print("🔑 Alpha Vantage key detected (will use as last-resort fallback)")
+        else:
+            print("⏭️ No Alpha Vantage key set; skipping AV except for IBM demo")
         
         # IMPROVEMENT #2: Initialize smart caching system
         try:
@@ -64,15 +89,15 @@ class AdvancedDataFetcher:
         # Initialize cost-effective data sources
         try:
             from cost_effective_data_sources import CostEffectiveDataManager
-            self.cost_effective_data = CostEffectiveDataManager()
+            self.cost_effective_data = CostEffectiveDataManager(verbose=False)
             print("🆓 Cost-effective data sources initialized - FREE REAL DATA")
         except ImportError:
             self.cost_effective_data = None
             print("⚠️ Cost-effective data sources not available")
         
-        if ALPHA_VANTAGE_AVAILABLE and alpha_vantage_key:
-            self.av_ts = TimeSeries(key=alpha_vantage_key, output_format='pandas')
-            self.av_fd = FundamentalData(key=alpha_vantage_key, output_format='pandas')
+        if ALPHA_VANTAGE_AVAILABLE and self.alpha_vantage_key:
+            self.av_ts = TimeSeries(key=self.alpha_vantage_key, output_format='pandas')
+            self.av_fd = FundamentalData(key=self.alpha_vantage_key, output_format='pandas')
         
         if FRED_AVAILABLE and fred_api_key:
             self.fred = fredapi.Fred(api_key=fred_api_key)
@@ -93,13 +118,60 @@ class AdvancedDataFetcher:
             except Exception:
                 pass
         
-        # Cache for market context (SPY/VIXY once per run)
+    # Cache for market context (SPY/VIX once per run)
         self._market_context_cache = None
         self._market_context_ts = None
         
         # Rate limiting protection (increased delay for better reliability)
         self._last_yfinance_call = 0
-        self._yfinance_delay = 0.2  # 200ms between calls for better reliability
+        self._yfinance_delay = 0.3  # Slightly higher delay between calls for better reliability
+
+        # Track failures for the last run (symbols that could not be fetched)
+        # Each item: { 'symbol': str, 'reason': str }
+        self.last_run_failures = []
+
+    
+
+    def _generate_symbol_variants(self, symbol: str) -> list[str]:
+        """Generate common Yahoo-compatible variants for tricky tickers (esp. TSX).
+        Examples:
+        - REI.UN.TO -> REI-UN.TO
+        - BNS.PR.A.TO -> BNS-PR-A.TO (and a couple punctuation alternatives)
+        - BRK.B -> BRK-B (also handled elsewhere)
+        Original symbol is always first.
+        """
+        variants = [symbol]
+        try:
+            s = symbol
+            # Handle Berkshire style dot class
+            if s.count('.') == 1 and s.endswith('.B'):
+                variants.append(s.replace('.B', '-B'))
+            # TSX patterns
+            if s.endswith('.TO'):
+                base = s[:-3]
+                # UN units: REI.UN.TO -> REI-UN.TO
+                if '.UN' in base:
+                    variants.append(base.replace('.UN', '-UN') + '.TO')
+                # U class: DLR.U.TO -> DLR-U.TO
+                if '.U' in base:
+                    variants.append(base.replace('.U', '-U') + '.TO')
+                # Preferred: BNS.PR.A.TO -> BNS-PR-A.TO
+                if '.PR.' in base:
+                    pref = base.replace('.PR.', '-PR-') + '.TO'
+                    variants.append(pref)
+                    # Try alternative punctuation
+                    variants.append(base.replace('.PR.', '-PR.') + '.TO')
+                    variants.append(base.replace('.PR.', '.PR-') + '.TO')
+            # Deduplicate preserving order
+            seen = set()
+            uniq = []
+            for v in variants:
+                if v not in seen:
+                    uniq.append(v)
+                    seen.add(v)
+            return uniq
+        except Exception:
+            return variants
         
     def _fetch_simple_web_data(self, symbol: str):
         """Simple web scraping fallback for basic market data"""
@@ -143,6 +215,29 @@ class AdvancedDataFetcher:
         except Exception:
             pass
         return None
+
+    def spot_check_against_stooq(self, symbol: str, df: pd.DataFrame, *, pct_tolerance: float = 0.02) -> tuple[bool, float]:
+        """Lightweight cross-source check.
+        Compares latest Close with Stooq data when available.
+        Returns (ok, pct_diff). Does not raise on failure.
+        """
+        try:
+            if df is None or df.empty or 'Close' not in df.columns:
+                return False, 1.0
+            stooq_df = self._fetch_stooq_history(symbol)
+            if stooq_df is None or stooq_df.empty or 'Close' not in stooq_df.columns:
+                return True, 0.0
+            close_a = float(df['Close'].iloc[-1])
+            close_b = float(stooq_df['Close'].iloc[-1])
+            if close_a <= 0 or close_b <= 0:
+                return True, 0.0
+            pct_diff = abs(close_a - close_b) / close_b
+            ok = pct_diff <= pct_tolerance
+            if not ok:
+                print(f"⚠️ Spot-check drift {symbol}: feed={close_a:.4f} vs stooq={close_b:.4f} (diff {pct_diff*100:.2f}%)")
+            return ok, pct_diff
+        except Exception:
+            return True, 0.0
 
     def _fetch_stooq_history(self, symbol: str):
         """Fallback: fetch daily history from Stooq CSV (free, no key)."""
@@ -222,7 +317,8 @@ class AdvancedDataFetcher:
         # Try cost-effective sources FIRST for real data at $0 cost
         if self.cost_effective_data:
             try:
-                print(f"🆓 Trying cost-effective sources for {symbol}...")
+                if getattr(self.cost_effective_data, 'verbose', False) or self.verbose:
+                    print(f"🆓 Trying cost-effective sources for {symbol}...")
                 cost_effective_data = self.cost_effective_data.get_stock_data(symbol, "2y")
                 if cost_effective_data is not None and not cost_effective_data.empty and len(cost_effective_data) > 20:
                     if self._validate_market_data(cost_effective_data, symbol):
@@ -238,29 +334,38 @@ class AdvancedDataFetcher:
                 print(f"❌ Free data error for {symbol}: {str(e)[:50]}")
         
         # Fallback to free sources only if paid sources fail
-        print(f"🔄 Trying free sources for {symbol}...")
+        if self.verbose:
+            print(f"🔄 Trying free sources for {symbol}...")
         methods = [
             ("Yahoo Direct API", self._try_yahoo_direct_api),
             ("ticker.history", self._try_ticker_history),
             ("yf.download", self._try_yf_download),
             ("different periods", self._try_different_periods)
         ]
-        
-        for method_name, method_func in methods:
-            try:
-                hist = method_func(symbol)
-                if hist is not None and not hist.empty and len(hist) > 50:
-                    if self._validate_market_data(hist, symbol):
-                        self._last_yfinance_call = time.time()
-                        return hist
-                    else:
-                        print(f"⚠️ {method_name} data validation failed for {symbol}")
-            except Exception as e:
-                print(f"⚠️ {method_name} failed for {symbol}: {str(e)[:50]}")
-                continue
+
+        candidates = self._generate_symbol_variants(symbol)
+        for cand in candidates:
+            for method_name, method_func in methods:
+                try:
+                    hist = method_func(cand)
+                    if hist is not None and not hist.empty and len(hist) > 50:
+                        if self._validate_market_data(hist, symbol):
+                            self._last_yfinance_call = time.time()
+                            # Cache under original symbol for consistency
+                            if self.cache:
+                                self.cache.save_to_cache(symbol, hist, 'history')
+                            if cand != symbol:
+                                print(f"🔤 Used variant {cand} for {symbol} via {method_name}")
+                            return hist
+                        else:
+                            print(f"⚠️ {method_name} data validation failed for {cand}")
+                except Exception as e:
+                    print(f"⚠️ {method_name} failed for {cand}: {str(e)[:50]}")
+                    continue
         
         # Fallback to Stooq
-        print(f"🔄 Trying Stooq fallback for {symbol}")
+        if self.verbose:
+            print(f"🔄 Trying Stooq fallback for {symbol}")
         stooq_data = self._fetch_stooq_history(symbol)
         if stooq_data is not None and not stooq_data.empty:
             if self._validate_market_data(stooq_data, symbol):
@@ -274,6 +379,12 @@ class AdvancedDataFetcher:
             if self._validate_market_data(av_data, symbol):
                 return av_data
             
+        # Record a failure for diagnostics/UX if nothing worked
+        try:
+            # Avoid unbounded growth across runs; caller should reset per run
+            self.last_run_failures.append({'symbol': symbol, 'reason': 'All free sources failed'})
+        except Exception:
+            pass
         return None
     
     def _try_yahoo_direct_api(self, symbol):
@@ -311,17 +422,29 @@ class AdvancedDataFetcher:
                         
                         timestamps = result['timestamp']
                         quotes = result['indicators']['quote'][0]
+                        # Try to use adjusted close if provided
+                        adjclose_list = None
+                        try:
+                            if 'adjclose' in result['indicators'] and len(result['indicators']['adjclose']) > 0:
+                                adj_obj = result['indicators']['adjclose'][0]
+                                if isinstance(adj_obj, dict) and 'adjclose' in adj_obj:
+                                    adjclose_list = adj_obj['adjclose']
+                        except Exception:
+                            adjclose_list = None
                         
                         # Convert to DataFrame
                         df_data = []
                         for i, ts in enumerate(timestamps):
                             try:
+                                close_val = quotes['close'][i]
+                                if adjclose_list is not None and i < len(adjclose_list) and adjclose_list[i] is not None:
+                                    close_val = adjclose_list[i]
                                 df_data.append({
                                     'Date': pd.to_datetime(ts, unit='s'),
                                     'Open': quotes['open'][i],
                                     'High': quotes['high'][i],
                                     'Low': quotes['low'][i],
-                                    'Close': quotes['close'][i],
+                                    'Close': close_val,
                                     'Volume': quotes['volume'][i] if quotes['volume'][i] is not None else 0
                                 })
                             except (IndexError, TypeError):
@@ -357,7 +480,8 @@ class AdvancedDataFetcher:
                 ticker = yf.Ticker(symbol)
                 buf_out, buf_err = io.StringIO(), io.StringIO()
                 with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-                    return ticker.history(period="2y", interval="1d")
+                    # Prefer adjusted prices for indicator accuracy
+                    return ticker.history(period="2y", interval="1d", auto_adjust=True)
             finally:
                 yf_logger.setLevel(original_level)
     
@@ -369,7 +493,8 @@ class AdvancedDataFetcher:
             warnings.simplefilter("ignore")
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-                return yf.download(symbol, period="2y", progress=False, show_errors=False)
+                # Use adjusted OHLC to avoid dividend/split distortions
+                return yf.download(symbol, period="2y", progress=False, show_errors=False, auto_adjust=True)
     
     def _try_different_periods(self, symbol):
         """Try different time periods"""
@@ -389,7 +514,8 @@ class AdvancedDataFetcher:
                         ticker = yf.Ticker(symbol)
                         buf_out, buf_err = io.StringIO(), io.StringIO()
                         with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-                            hist = ticker.history(period=period, interval="1d")
+                            # Prefer adjusted prices when available
+                            hist = ticker.history(period=period, interval="1d", auto_adjust=True)
                         
                         if hist is not None and not hist.empty and len(hist) > 20:
                             return hist
@@ -401,15 +527,24 @@ class AdvancedDataFetcher:
         return None
     
     def _try_alpha_vantage_free(self, symbol):
-        """Try Alpha Vantage free tier as final fallback"""
+        """Try Alpha Vantage free tier as final fallback.
+        Uses configured API key when available; only uses public 'demo' for IBM.
+        """
         try:
             # Alpha Vantage free tier - 5 calls per minute, 500 per day
             # This is a last resort fallback
             import requests
             from datetime import datetime, timedelta
             
-            # Free API key (demo key, limited calls)
-            api_key = "demo"  # Replace with actual free key if needed
+            # Choose API key: prefer configured; fall back to demo ONLY for IBM
+            api_key = None
+            if self.alpha_vantage_key:
+                api_key = self.alpha_vantage_key
+            elif symbol.upper() == "IBM":
+                api_key = "demo"
+            else:
+                # No key and not IBM - skip AV to avoid useless calls
+                return None
             url = f"https://www.alphavantage.co/query"
             
             params = {
@@ -442,6 +577,11 @@ class AdvancedDataFetcher:
                 df.sort_index(inplace=True)
                 
                 return df
+            else:
+                # Handle AV messages (rate limit, invalid key) quietly
+                msg = (data.get('Note') or data.get('Error Message') or '')
+                if msg:
+                    print(f"⚠️ Alpha Vantage skipped for {symbol}: {msg[:80]}")
                 
         except Exception:
             pass
@@ -587,8 +727,9 @@ class AdvancedDataFetcher:
                         yf_logger.setLevel(original_level)
 
             # Multi-source SPY data fetching with comprehensive fallbacks
-            spy_return_1d = 0.001  # Default: 0.1% daily return
-            spy_vol_20 = 0.015     # Default: 1.5% daily volatility
+            # No synthetic defaults; compute only if sources succeed
+            spy_return_1d = None
+            spy_vol_20 = None
             spy_data_source = "default"
             
             # Try multiple sources for SPY data (ordered by reliability, problematic tickers removed)
@@ -614,21 +755,22 @@ class AdvancedDataFetcher:
                             spy_data_source = source_name
                         if len(close) >= 21:
                             spy_vol_20 = float(close.pct_change().rolling(20).std().iloc[-1])
-                        print(f"SPY data retrieved from {source_name}")
+                        try:
+                            print(f"✅ SPY source: {source_name} | ret_1d={spy_return_1d:.4f}, vol_20={spy_vol_20:.4f}")
+                        except Exception:
+                            print(f"SPY data retrieved from {source_name}")
                         break
                 except Exception:
                     continue
             
             # If all real sources fail, use synthetic data
             if spy_data_source == "default":
-                print("All SPY sources failed, using synthetic market context")
-                import numpy as np
-                np.random.seed(42)  # Consistent synthetic data
-                spy_return_1d = np.random.normal(0.001, 0.01)
-                spy_vol_20 = max(0.01, np.random.normal(0.015, 0.005))
+                # No synthetic macro; log and continue with missing values
+                print("⚠️ All SPY sources failed, macro features for SPY disabled for this run")
 
             # Multi-source VIX data fetching with comprehensive fallbacks
-            vix_proxy = 18.0  # Default VIX level
+            # No synthetic default; compute only if sources succeed
+            vix_proxy = None
             vix_data_source = "default"
             
             # Try multiple sources for VIX data
@@ -667,17 +809,18 @@ class AdvancedDataFetcher:
                             vix_proxy = max(10.0, min(50.0, vix_last))
                         
                         vix_data_source = source_name
-                        print(f"VIX data retrieved from {source_name}")
+                        try:
+                            print(f"✅ VIX proxy source: {source_name} | vix_level≈{vix_proxy:.2f}")
+                        except Exception:
+                            print(f"VIX data retrieved from {source_name}")
                         break
                 except Exception:
                     continue
             
             # If all real sources fail, use synthetic VIX
             if vix_data_source == "default":
-                print("All VIX sources failed, using synthetic volatility index")
-                import numpy as np
-                np.random.seed(43)  # Different seed for VIX
-                vix_proxy = max(10.0, min(40.0, np.random.normal(18.0, 5.0)))
+                # No synthetic macro; log and continue with missing value
+                print("⚠️ All VIX sources failed, VIX-based macro disabled for this run")
 
             # === Additional one-shot macro context (rate-limit friendly) ===
             def _fetch_any(symbols: list[str]):
@@ -779,9 +922,13 @@ class AdvancedDataFetcher:
             semis_spy_ratio_1d = _ratio_change_1d(smh_df, spy_df_for_ratio) if (smh_df is not None and spy_df_for_ratio is not None) else 0.0
 
             ctx = {
+                # Only include computed macro values; None means unavailable
                 'spy_return_1d': spy_return_1d,
                 'spy_vol_20': spy_vol_20,
                 'vix_proxy': vix_proxy,
+                # Sources for explicit logging/diagnostics
+                'spy_source': spy_data_source,
+                'vix_source': vix_data_source,
                 # Additional macro
                 'usd_change_1d': usd_change_1d,
                 'gold_change_1d': gold_change_1d,
@@ -827,7 +974,7 @@ class AdvancedDataFetcher:
                         symbols_to_fetch.append(symbol)
                 
                 if cache_hits > 0:
-                    print(f"💾 Cache hits: {cache_hits}/{len(symbols)} symbols ({cache_hits/len(symbols)*100:.1f}%)")
+                    print(f"💾 Cache hits (SmartCache): {cache_hits}/{len(symbols)} symbols ({cache_hits/len(symbols)*100:.1f}%) — loaded locally to speed up")
             else:
                 symbols_to_fetch = symbols
             
@@ -928,6 +1075,11 @@ class AdvancedDataFetcher:
             
             # If yfinance bulk failed, fall back to individual fetching with synthetic data
             print("Bulk yfinance failed, using individual fetch with synthetic fallback...")
+            # Reset last-run failures for clear tracking on this pass
+            try:
+                self.last_run_failures = []
+            except Exception:
+                self.last_run_failures = []
             for symbol in symbols:
                 try:
                     # Use our improved individual fetcher (NO synthetic fallback)
@@ -935,6 +1087,12 @@ class AdvancedDataFetcher:
                     if hist is None or hist.empty:
                         print(f"❌ No real data for {symbol} - skipping")
                         out[symbol] = None
+                        # Only add a generic reason if not already recorded
+                        try:
+                            if not any(f.get('symbol') == symbol for f in self.last_run_failures):
+                                self.last_run_failures.append({'symbol': symbol, 'reason': 'No real data - skipping'})
+                        except Exception:
+                            pass
                     else:
                         out[symbol] = hist
                 except Exception:
@@ -951,7 +1109,12 @@ class AdvancedDataFetcher:
             return out
 
     def get_better_fundamentals(self, symbol):
-        """IMPROVEMENT #4: Extract comprehensive fundamentals from yfinance (all FREE!)"""
+        """IMPROVED: Rate-limit-safe fundamentals with free fallbacks (fast_info, AV).
+        Strategy:
+        - Light mode: avoid heavy yfinance.info; prefer fast_info and keep lightweight defaults
+        - Full modes: try yfinance.info with backoff; then Alpha Vantage overview as backup
+        - Always attempt to fill market_cap via fast_info or AV if missing
+        """
         try:
             # Check cache first
             if self.cache:
@@ -959,62 +1122,178 @@ class AdvancedDataFetcher:
                 if cached_fundamentals is not None:
                     return cached_fundamentals
             
-            # Fetch from yfinance (single call, lots of data)
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            
-            # Extract ALL available free fundamental data
+            # Base structure with safe defaults (lightweight)
             fundamentals = {
                 # Valuation metrics
-                'pe_ratio': info.get('trailingPE', 0),
-                'forward_pe': info.get('forwardPE', 0),
-                'peg_ratio': info.get('pegRatio', 0),
-                'price_to_book': info.get('priceToBook', 0),
-                'price_to_sales': info.get('priceToSalesTrailing12Months', 0),
-                'enterprise_value': info.get('enterpriseValue', 0),
-                'ev_to_ebitda': info.get('enterpriseToEbitda', 0),
-                
+                'pe_ratio': 0, 'forward_pe': 0, 'peg_ratio': 0, 'price_to_book': 0,
+                'price_to_sales': 0, 'enterprise_value': 0, 'ev_to_ebitda': 0,
                 # Profitability metrics
-                'profit_margins': info.get('profitMargins', 0),
-                'operating_margins': info.get('operatingMargins', 0),
-                'gross_margins': info.get('grossMargins', 0),
-                'roe': info.get('returnOnEquity', 0),
-                'roa': info.get('returnOnAssets', 0),
-                'roic': info.get('returnOnCapital', 0),
-                
+                'profit_margins': 0, 'operating_margins': 0, 'gross_margins': 0,
+                'roe': 0, 'roa': 0, 'roic': 0,
                 # Growth metrics
-                'revenue_growth': info.get('revenueGrowth', 0),
-                'earnings_growth': info.get('earningsGrowth', 0),
-                'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth', 0),
-                
+                'revenue_growth': 0, 'earnings_growth': 0, 'earnings_quarterly_growth': 0,
                 # Financial health
-                'debt_to_equity': info.get('debtToEquity', 0),
-                'current_ratio': info.get('currentRatio', 0),
-                'quick_ratio': info.get('quickRatio', 0),
-                'total_cash': info.get('totalCash', 0),
-                'total_debt': info.get('totalDebt', 0),
-                
+                'debt_to_equity': 0, 'current_ratio': 0, 'quick_ratio': 0,
+                'total_cash': 0, 'total_debt': 0,
                 # Cash flow
-                'free_cashflow': info.get('freeCashflow', 0),
-                'operating_cashflow': info.get('operatingCashflow', 0),
-                
+                'free_cashflow': 0, 'operating_cashflow': 0,
                 # Dividend info
-                'dividend_yield': info.get('dividendYield', 0),
-                'payout_ratio': info.get('payoutRatio', 0),
-                'dividend_rate': info.get('dividendRate', 0),
-                
+                'dividend_yield': 0, 'payout_ratio': 0, 'dividend_rate': 0,
                 # Company info
-                'market_cap': info.get('marketCap', 0),
-                'sector': info.get('sector', 'Unknown'),
-                'industry': info.get('industry', 'Unknown'),
-                'beta': info.get('beta', 1.0),
-                
+                'market_cap': 0, 'sector': 'Unknown', 'industry': 'Unknown', 'beta': 1.0,
                 # Analyst metrics
-                'target_price': info.get('targetMeanPrice', 0),
-                'recommendation': info.get('recommendationKey', 'hold'),
-                'number_of_analyst_opinions': info.get('numberOfAnalystOpinions', 0)
+                'target_price': 0, 'recommendation': 'hold', 'number_of_analyst_opinions': 0,
             }
-            
+
+            # Always create ticker but guard with backoff
+            ticker = None
+            try:
+                # Basic rate limiting between yfinance calls
+                now = time.time()
+                dt = now - getattr(self, '_last_yfinance_call', 0)
+                if dt < self._yfinance_delay:
+                    time.sleep(self._yfinance_delay - dt)
+                ticker = yf.Ticker(symbol)
+                self._last_yfinance_call = time.time()
+            except Exception:
+                ticker = None
+
+            # Light mode: avoid heavy info endpoint; prefer fast_info
+            info_used = 'none'
+            if self.data_mode == 'light':
+                try:
+                    fi = getattr(ticker, 'fast_info', None) if ticker else None
+                    if fi:
+                        mc = None
+                        try:
+                            mc = fi.get('market_cap', None)
+                        except Exception:
+                            mc = None
+                        if not mc:
+                            mc = getattr(fi, 'market_cap', None)
+                        if mc:
+                            fundamentals['market_cap'] = int(mc)
+                            info_used = 'fast_info'
+                        # Try capture beta if exposed
+                        try:
+                            beta = fi.get('beta', None)
+                        except Exception:
+                            beta = getattr(fi, 'beta', None)
+                        if beta is not None:
+                            fundamentals['beta'] = float(beta)
+                except Exception:
+                    pass
+            else:
+                # Non-light modes: cautiously try yfinance.info with backoff
+                try:
+                    # Backoff if needed
+                    now = time.time()
+                    dt = now - getattr(self, '_last_yfinance_call', 0)
+                    if dt < self._yfinance_delay:
+                        time.sleep(self._yfinance_delay - dt)
+                    info = (ticker.info if ticker else {}) or {}
+                    self._last_yfinance_call = time.time()
+
+                    fundamentals.update({
+                        'pe_ratio': info.get('trailingPE', 0) or 0,
+                        'forward_pe': info.get('forwardPE', 0) or 0,
+                        'peg_ratio': info.get('pegRatio', 0) or 0,
+                        'price_to_book': info.get('priceToBook', 0) or 0,
+                        'price_to_sales': info.get('priceToSalesTrailing12Months', 0) or 0,
+                        'enterprise_value': info.get('enterpriseValue', 0) or 0,
+                        'ev_to_ebitda': info.get('enterpriseToEbitda', 0) or 0,
+                        'profit_margins': info.get('profitMargins', 0) or 0,
+                        'operating_margins': info.get('operatingMargins', 0) or 0,
+                        'gross_margins': info.get('grossMargins', 0) or 0,
+                        'roe': info.get('returnOnEquity', 0) or 0,
+                        'roa': info.get('returnOnAssets', 0) or 0,
+                        'roic': info.get('returnOnCapital', 0) or 0,
+                        'revenue_growth': info.get('revenueGrowth', 0) or 0,
+                        'earnings_growth': info.get('earningsGrowth', 0) or 0,
+                        'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth', 0) or 0,
+                        'debt_to_equity': info.get('debtToEquity', 0) or 0,
+                        'current_ratio': info.get('currentRatio', 0) or 0,
+                        'quick_ratio': info.get('quickRatio', 0) or 0,
+                        'total_cash': info.get('totalCash', 0) or 0,
+                        'total_debt': info.get('totalDebt', 0) or 0,
+                        'free_cashflow': info.get('freeCashflow', 0) or 0,
+                        'operating_cashflow': info.get('operatingCashflow', 0) or 0,
+                        'dividend_yield': info.get('dividendYield', 0) or 0,
+                        'payout_ratio': info.get('payoutRatio', 0) or 0,
+                        'dividend_rate': info.get('dividendRate', 0) or 0,
+                        'market_cap': info.get('marketCap', 0) or 0,
+                        'sector': info.get('sector', 'Unknown') or 'Unknown',
+                        'industry': info.get('industry', 'Unknown') or 'Unknown',
+                        'beta': info.get('beta', 1.0) or 1.0,
+                        'target_price': info.get('targetMeanPrice', 0) or 0,
+                        'recommendation': info.get('recommendationKey', 'hold') or 'hold',
+                        'number_of_analyst_opinions': info.get('numberOfAnalystOpinions', 0) or 0,
+                    })
+                    info_used = 'yfinance.info'
+                except Exception:
+                    pass
+
+                # If market_cap still missing, try fast_info
+                if not fundamentals.get('market_cap') and ticker is not None:
+                    try:
+                        fi = getattr(ticker, 'fast_info', None)
+                        if fi:
+                            mc = None
+                            try:
+                                mc = fi.get('market_cap', None)
+                            except Exception:
+                                mc = None
+                            if not mc:
+                                mc = getattr(fi, 'market_cap', None)
+                            if mc:
+                                fundamentals['market_cap'] = int(mc)
+                                info_used = 'fast_info'
+                    except Exception:
+                        pass
+
+            # Optional Alpha Vantage fundamentals fallback (free but rate limited)
+            if (not fundamentals.get('market_cap') or fundamentals.get('pe_ratio', 0) == 0) and ALPHA_VANTAGE_AVAILABLE and getattr(self, 'av_fd', None):
+                try:
+                    # Respect AV free-tier rate limits: small sleep
+                    time.sleep(0.2)
+                    df_ov, _ = self.av_fd.get_company_overview(symbol)
+                    if isinstance(df_ov, pd.DataFrame) and not df_ov.empty:
+                        row = df_ov.iloc[0]
+                        def to_float(x, default=0.0):
+                            try:
+                                return float(x)
+                            except Exception:
+                                return default
+                        mc = to_float(row.get('MarketCapitalization', 0), 0.0)
+                        if mc and not np.isnan(mc):
+                            fundamentals['market_cap'] = int(mc)
+                            info_used = info_used if info_used != 'none' else 'alpha_vantage'
+                        pe = to_float(row.get('PERatio', 0), 0.0)
+                        if pe:
+                            fundamentals['pe_ratio'] = pe
+                        pb = to_float(row.get('PriceToBookRatio', 0), 0.0)
+                        if pb:
+                            fundamentals['price_to_book'] = pb
+                        dy = to_float(row.get('DividendYield', 0), 0.0)
+                        if dy:
+                            fundamentals['dividend_yield'] = dy
+                        beta = to_float(row.get('Beta', 0), 0.0)
+                        if beta:
+                            fundamentals['beta'] = beta
+                        sector = row.get('Sector', None)
+                        if sector:
+                            fundamentals['sector'] = sector
+                except Exception:
+                    pass
+
+            # Log summary for diagnostics
+            try:
+                src = info_used
+                mc_disp = fundamentals.get('market_cap', 0)
+                print(f"📈 Fundamentals[{symbol}]: market_cap=${mc_disp:,.0f} via {src}")
+            except Exception:
+                pass
+
             # Cache the results
             if self.cache:
                 self.cache.save_to_cache(symbol, fundamentals, 'fundamentals')
@@ -1109,6 +1388,54 @@ class AdvancedDataFetcher:
                     'beta': 1.0,
                     'debtToEquity': 0.0,
                 }
+
+            # Last-resort market cap backfill if still zero: try fast_info or compute from shares*price
+            try:
+                if (info.get('marketCap', 0) or 0) == 0:
+                    tk = None
+                    try:
+                        now = time.time()
+                        dt = now - getattr(self, '_last_yfinance_call', 0)
+                        if dt < self._yfinance_delay:
+                            time.sleep(self._yfinance_delay - dt)
+                        tk = yf.Ticker(symbol)
+                        self._last_yfinance_call = time.time()
+                    except Exception:
+                        tk = None
+                    fi = getattr(tk, 'fast_info', None) if tk else None
+                    mc = None
+                    if fi:
+                        try:
+                            mc = fi.get('market_cap', None)
+                        except Exception:
+                            mc = getattr(fi, 'market_cap', None)
+                    if not mc and isinstance(hist, pd.DataFrame) and not hist.empty:
+                        last_price = float(hist['Close'].iloc[-1]) if 'Close' in hist.columns else None
+                        shares = None
+                        if fi:
+                            try:
+                                shares = fi.get('shares_outstanding', None)
+                            except Exception:
+                                shares = getattr(fi, 'shares_outstanding', None)
+                        if (not shares) and tk is not None:
+                            try:
+                                # yfinance sometimes exposes shares via get_shares_full (expensive) - avoid in light mode
+                                shares = None
+                            except Exception:
+                                shares = None
+                        if last_price and shares:
+                            try:
+                                mc = float(last_price) * float(shares)
+                            except Exception:
+                                mc = None
+                    if mc:
+                        info['marketCap'] = int(mc)
+                        try:
+                            print(f"🧮 Backfilled market cap for {symbol}: ${info['marketCap']:,.0f}")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             
             if hist is None or hist.empty:
                 # CRITICAL: Never use synthetic data for real trading analysis
@@ -1146,25 +1473,19 @@ class AdvancedDataFetcher:
                 # Economic (market context fetched once per run)
                 market_ctx = self.get_market_context()
                 economic_data = {
-                    'vix': market_ctx.get('vix_proxy', 20.0),
-                    'spy_return_1d': market_ctx.get('spy_return_1d', 0.0),
-                    'spy_vol_20': market_ctx.get('spy_vol_20', 0.02),
-                    # Added macro context (one-shot, cached)
-                    'usd_change_1d': market_ctx.get('usd_change_1d', 0.0),
-                    'gold_change_1d': market_ctx.get('gold_change_1d', 0.0),
-                    'oil_change_1d': market_ctx.get('oil_change_1d', 0.0),
-                    'yield_10y': market_ctx.get('yield_10y', 0.0),
-                    'yield_3m': market_ctx.get('yield_3m', 0.0),
-                    'yield_curve_slope': market_ctx.get('yield_curve_slope', 0.0),
-                    'hyg_lqd_ratio_1d': market_ctx.get('hyg_lqd_ratio_1d', 0.0),
-                    'small_large_ratio_1d': market_ctx.get('small_large_ratio_1d', 0.0),
-                    'xly_xlp_ratio_1d': market_ctx.get('xly_xlp_ratio_1d', 0.0),
-                    'semis_spy_ratio_1d': market_ctx.get('semis_spy_ratio_1d', 0.0),
-                    # Static economic placeholders
-                    'fed_rate': 5.25,
-                    'gdp_growth': 2.5,
-                    'inflation': 3.0,
-                    'unemployment': 3.8
+                    'vix': market_ctx.get('vix_proxy', None),
+                    'spy_return_1d': market_ctx.get('spy_return_1d', None),
+                    'spy_vol_20': market_ctx.get('spy_vol_20', None),
+                    'usd_change_1d': market_ctx.get('usd_change_1d', None),
+                    'gold_change_1d': market_ctx.get('gold_change_1d', None),
+                    'oil_change_1d': market_ctx.get('oil_change_1d', None),
+                    'yield_10y': market_ctx.get('yield_10y', None),
+                    'yield_3m': market_ctx.get('yield_3m', None),
+                    'yield_curve_slope': market_ctx.get('yield_curve_slope', None),
+                    'hyg_lqd_ratio_1d': market_ctx.get('hyg_lqd_ratio_1d', None),
+                    'small_large_ratio_1d': market_ctx.get('small_large_ratio_1d', None),
+                    'xly_xlp_ratio_1d': market_ctx.get('xly_xlp_ratio_1d', None),
+                    'semis_spy_ratio_1d': market_ctx.get('semis_spy_ratio_1d', None),
                 }
                 sector_data = self._get_sector_analysis(symbol)
 
@@ -1189,25 +1510,19 @@ class AdvancedDataFetcher:
                 earnings_data = self._get_earnings_data(symbol)
                 market_ctx = self.get_market_context()
                 economic_data = {
-                    'vix': market_ctx.get('vix_proxy', 20.0),
-                    'spy_return_1d': market_ctx.get('spy_return_1d', 0.0),
-                    'spy_vol_20': market_ctx.get('spy_vol_20', 0.02),
-                    # Added macro context (one-shot, cached)
-                    'usd_change_1d': market_ctx.get('usd_change_1d', 0.0),
-                    'gold_change_1d': market_ctx.get('gold_change_1d', 0.0),
-                    'oil_change_1d': market_ctx.get('oil_change_1d', 0.0),
-                    'yield_10y': market_ctx.get('yield_10y', 0.0),
-                    'yield_3m': market_ctx.get('yield_3m', 0.0),
-                    'yield_curve_slope': market_ctx.get('yield_curve_slope', 0.0),
-                    'hyg_lqd_ratio_1d': market_ctx.get('hyg_lqd_ratio_1d', 0.0),
-                    'small_large_ratio_1d': market_ctx.get('small_large_ratio_1d', 0.0),
-                    'xly_xlp_ratio_1d': market_ctx.get('xly_xlp_ratio_1d', 0.0),
-                    'semis_spy_ratio_1d': market_ctx.get('semis_spy_ratio_1d', 0.0),
-                    # Static economic placeholders
-                    'fed_rate': 5.25,
-                    'gdp_growth': 2.5,
-                    'inflation': 3.0,
-                    'unemployment': 3.8
+                    'vix': market_ctx.get('vix_proxy', None),
+                    'spy_return_1d': market_ctx.get('spy_return_1d', None),
+                    'spy_vol_20': market_ctx.get('spy_vol_20', None),
+                    'usd_change_1d': market_ctx.get('usd_change_1d', None),
+                    'gold_change_1d': market_ctx.get('gold_change_1d', None),
+                    'oil_change_1d': market_ctx.get('oil_change_1d', None),
+                    'yield_10y': market_ctx.get('yield_10y', None),
+                    'yield_3m': market_ctx.get('yield_3m', None),
+                    'yield_curve_slope': market_ctx.get('yield_curve_slope', None),
+                    'hyg_lqd_ratio_1d': market_ctx.get('hyg_lqd_ratio_1d', None),
+                    'small_large_ratio_1d': market_ctx.get('small_large_ratio_1d', None),
+                    'xly_xlp_ratio_1d': market_ctx.get('xly_xlp_ratio_1d', None),
+                    'semis_spy_ratio_1d': market_ctx.get('semis_spy_ratio_1d', None),
                 }
                 sector_data = self._get_sector_analysis(symbol)
                 analyst_data = self._get_analyst_ratings(symbol)

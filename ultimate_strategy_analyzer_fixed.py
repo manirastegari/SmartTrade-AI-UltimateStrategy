@@ -32,6 +32,11 @@ class FixedUltimateStrategyAnalyzer:
         self.base_results = {}  # Store single analysis run
         self.strategy_results = {}
         self.consensus_recommendations = []
+        # Guardrail thresholds (to avoid catastrophic picks)
+        self.guard_min_price = 5.0
+        self.guard_min_volume = 300_000
+        self.guard_max_abs_change_pct = 15.0
+        self.guard_exclude_biotech = True
         
     def run_ultimate_strategy(self, progress_callback=None):
         """
@@ -93,6 +98,8 @@ class FixedUltimateStrategyAnalyzer:
         
         # Convert list to dict for easy lookup
         self.base_results = {r['symbol']: r for r in results}
+        # Capture upstream run meta (requested vs analyzed vs skipped)
+        self.last_run_meta = getattr(self.analyzer, 'last_run_meta', {}) or {}
         
         if progress_callback:
             progress_callback(f"Analysis complete! Applying 4 strategy perspectives...", 70)
@@ -125,6 +132,13 @@ class FixedUltimateStrategyAnalyzer:
             sector_analysis
         )
         
+        # Build profit-optimized portfolio (Alpha+) that smartly includes top Tier 3
+        try:
+            alpha_plus = self._build_profit_optimized_portfolio(final_recommendations.get('consensus_recommendations', []))
+            final_recommendations['alpha_plus_portfolio'] = alpha_plus
+        except Exception as _:
+            final_recommendations['alpha_plus_portfolio'] = {'picks': [], 'summary': {}}
+
         if progress_callback:
             progress_callback("FIXED Ultimate Strategy Analysis Complete!", 100)
         
@@ -359,9 +373,15 @@ class FixedUltimateStrategyAnalyzer:
             key=lambda x: (x['strategies_agreeing'], x['consensus_score']),
             reverse=True
         )
+
+        # Apply catastrophic-loss guardrails to consensus picks
+        consensus_stocks, removed_guard = self._apply_guardrails_to_consensus(consensus_stocks)
         
         # Count stocks by agreement level
         total_stocks_analyzed = len(all_symbols)
+        requested_universe_count = int(self.last_run_meta.get('requested_count', total_stocks_analyzed))
+        skipped_symbols = list(self.last_run_meta.get('skipped_symbols', []))
+        skipped_count = int(self.last_run_meta.get('skipped_count', max(0, requested_universe_count - total_stocks_analyzed)))
         stocks_4_of_4 = len([s for s in consensus_stocks if s['strategies_agreeing'] == 4])
         stocks_3_of_4 = len([s for s in consensus_stocks if s['strategies_agreeing'] == 3])
         stocks_2_of_4 = len([s for s in consensus_stocks if s['strategies_agreeing'] == 2])
@@ -370,7 +390,9 @@ class FixedUltimateStrategyAnalyzer:
         print(f"\n{'='*60}")
         print(f"📊 CONSENSUS ANALYSIS COMPLETE")
         print(f"{'='*60}")
+        print(f"Requested universe: {requested_universe_count}")
         print(f"Total stocks analyzed: {total_stocks_analyzed}")
+        print(f"Missing/failed symbols: {skipped_count}")
         print(f"Stocks with 4/4 agreement: {stocks_4_of_4}")
         print(f"Stocks with 3/4 agreement: {stocks_3_of_4}")
         print(f"Stocks with 2/4 agreement: {stocks_2_of_4}")
@@ -378,18 +400,274 @@ class FixedUltimateStrategyAnalyzer:
         print(f"Total consensus picks: {len(consensus_stocks)}")
         print(f"{'='*60}\n")
         
+        # Build replacement suggestions for skipped symbols (use TFSA universe categories)
+        replacement_suggestions = self._suggest_tfsa_replacements(skipped_symbols)
+        failures_list = list(self.last_run_meta.get('failures', []))
+
         return {
             'consensus_recommendations': consensus_stocks,
             'market_analysis': market_analysis,
             'sector_analysis': sector_analysis,
             'strategy_results': self.strategy_results,
             'total_stocks_analyzed': total_stocks_analyzed,
+            'requested_universe_count': requested_universe_count,
+            'skipped_count': skipped_count,
+            'skipped_symbols': skipped_symbols,
+            'failures': failures_list,
+            'replacement_suggestions': replacement_suggestions,
             'stocks_4_of_4': stocks_4_of_4,
             'stocks_3_of_4': stocks_3_of_4,
             'stocks_2_of_4': stocks_2_of_4,
             'stocks_1_of_4': stocks_1_of_4,
+            'removed_by_guardrails': removed_guard,
             'analysis_type': 'FIXED_OPTIMIZED_CONSENSUS'
         }
+
+    def _build_profit_optimized_portfolio(self, consensus_recs: list[dict]) -> dict:
+        """Construct an Alpha+ (profit-optimized) portfolio.
+        - Core: Keep strongest Tier 1-2 (3/4, 4/4) picks by risk-adjusted alpha
+        - Opportunistic: Add select Tier 3 (2/4) with strong momentum and upside
+        - Volatility-adjusted position sizing; sector caps at 30%; no new API calls
+        Returns dict with 'picks' and 'summary'.
+        """
+        if not consensus_recs:
+            return {'picks': [], 'summary': {}}
+
+        # Helper: compute alpha score per symbol
+        def alpha_score(item: dict) -> float:
+            sym = item.get('symbol')
+            base = self.base_results.get(sym, {})
+            mom = float(base.get('momentum_score', 50) or 50)
+            vol = float(base.get('volatility_score', 50) or 50)
+            upside = float(item.get('upside_potential', base.get('upside_potential', 0)) or 0)
+            cons = float(item.get('consensus_score', 60) or 60)
+            risk = (item.get('risk_level') or base.get('risk_level') or 'Medium')
+            penalty = 10 if str(risk).lower() == 'high' else (0 if str(risk).lower() == 'medium' else -5)
+            # upside bounded to 0..100 for stability
+            up = max(0.0, min(100.0, upside))
+            return 0.35*cons + 0.25*mom + 0.20*(100.0 - vol) + 0.20*up - penalty
+
+        # Partition tiers
+        tier4 = [r for r in consensus_recs if r.get('strategies_agreeing', 0) == 4]
+        tier3 = [r for r in consensus_recs if r.get('strategies_agreeing', 0) == 3]
+        tier2 = [r for r in consensus_recs if r.get('strategies_agreeing', 0) == 2]
+
+        # Rank core (tier4 + tier3)
+        core = sorted(tier4 + tier3, key=alpha_score, reverse=True)
+        core = core[:min(25, len(core))]  # cap core size
+
+        # Filter and rank opportunistic tier2 (Tier 3 in UI naming)
+        opp_candidates = []
+        for r in tier2:
+            sym = r.get('symbol')
+            base = self.base_results.get(sym, {})
+            price = float(base.get('current_price', r.get('current_price', 0)) or 0)
+            mom = float(base.get('momentum_score', 50) or 50)
+            vol = float(base.get('volatility_score', 50) or 50)
+            upside = float(r.get('upside_potential', base.get('upside_potential', 0)) or 0)
+            risk = (r.get('risk_level') or base.get('risk_level') or 'Medium')
+            if price >= 3 and upside >= 15 and (mom >= 60) and (str(risk).lower() != 'high' or (mom >= 75 and vol <= 55)):
+                opp_candidates.append(r)
+        opportunistic = sorted(opp_candidates, key=alpha_score, reverse=True)
+        opportunistic = opportunistic[:min(12, len(opportunistic))]
+
+        picks = core + opportunistic
+        if not picks:
+            return {'picks': [], 'summary': {}}
+
+        # Build preliminary weights (volatility-adjusted with tier multipliers)
+        prelim = []
+        for r in picks:
+            sym = r.get('symbol')
+            base = self.base_results.get(sym, {})
+            vol = float(base.get('volatility_score', 50) or 50)
+            agree = int(r.get('strategies_agreeing', 0) or 0)
+            tier_mult = 1.3 if agree == 4 else (1.15 if agree == 3 else 0.9)
+            w = tier_mult * (1.0 / max(10.0, vol))  # lower vol -> higher weight
+            prelim.append((r, w))
+
+        # Normalize weights to 1.0
+        tot = sum(w for _, w in prelim) or 1.0
+        prelim = [(r, w / tot) for r, w in prelim]
+
+        # Apply per-position caps and floors
+        min_w, max_w = 0.02, 0.08
+        prelim = [(r, max(min_w, min(max_w, w))) for r, w in prelim]
+        # Renormalize after clamping
+        tot = sum(w for _, w in prelim)
+        prelim = [(r, w / tot) for r, w in prelim]
+
+        # Sector caps at 30%
+        def enforce_sector_caps(rows: list[tuple[dict, float]], cap: float = 0.30, iters: int = 3):
+            for _ in range(iters):
+                # compute sector sums
+                sect_sum: dict[str, float] = {}
+                for r, w in rows:
+                    base = self.base_results.get(r.get('symbol'), {})
+                    sect = (r.get('sector') or base.get('sector') or 'Unknown')
+                    sect_sum[sect] = sect_sum.get(sect, 0.0) + w
+                # find violators
+                violators = {s: v for s, v in sect_sum.items() if v > cap}
+                if not violators:
+                    break
+                # scale down violators and redistribute
+                over = sum(v - cap for v in violators.values())
+                if over <= 0:
+                    break
+                # scale down
+                new_rows = []
+                removed_total = 0.0
+                for r, w in rows:
+                    base = self.base_results.get(r.get('symbol'), {})
+                    sect = (r.get('sector') or base.get('sector') or 'Unknown')
+                    if sect in violators and sect_sum[sect] > 0:
+                        scale = cap / sect_sum[sect]
+                        w_new = w * min(1.0, scale)
+                        removed_total += (w - w_new)
+                        new_rows.append((r, w_new))
+                    else:
+                        new_rows.append((r, w))
+                rows = new_rows
+                # redistribute proportionally to non-violators
+                tot_non = sum(w for (r, w) in rows if ((r.get('sector') or self.base_results.get(r.get('symbol'), {}).get('sector') or 'Unknown') not in violators))
+                if tot_non > 0 and removed_total > 0:
+                    new_rows = []
+                    for r, w in rows:
+                        sect = (r.get('sector') or self.base_results.get(r.get('symbol'), {}).get('sector') or 'Unknown')
+                        if sect in violators:
+                            new_rows.append((r, w))
+                        else:
+                            new_rows.append((r, w + removed_total * (w / tot_non)))
+                    rows = new_rows
+            # final renorm
+            tot = sum(w for _, w in rows) or 1.0
+            rows = [(r, w / tot) for r, w in rows]
+            return rows
+
+        prelim = enforce_sector_caps(prelim, cap=0.30, iters=3)
+
+        # Build enriched pick rows
+        out_rows = []
+        exp_upside = 0.0
+        for r, w in prelim:
+            sym = r.get('symbol')
+            base = self.base_results.get(sym, {})
+            price = float(base.get('current_price', r.get('current_price', 0)) or 0)
+            up = float(r.get('upside_potential', base.get('upside_potential', 0)) or 0)
+            vol = float(base.get('volatility_score', 50) or 50)
+            risk = (r.get('risk_level') or base.get('risk_level') or 'Medium')
+            targ = float(r.get('target_price', base.get('technical_target', 0)) or 0)
+            agree = int(r.get('strategies_agreeing', 0) or 0)
+            sector = r.get('sector') or base.get('sector') or 'Unknown'
+            tier_name = 'Tier 1' if agree == 4 else ('Tier 2' if agree == 3 else 'Tier 3')
+            # Stops and targets
+            stop_pct = 0.03 + (vol/100.0)*0.06  # 3%..9% typical
+            if str(risk).lower() == 'high':
+                stop_pct = min(0.12, stop_pct + 0.02)
+            stop_price = price * (1.0 - stop_pct) if price > 0 else 0
+            target_price = targ if targ and targ > 0 else (price * (1.0 + 0.7 * max(0.0, up)/100.0) if price > 0 else 0)
+            a_score = alpha_score(r)
+            out_rows.append({
+                'symbol': sym,
+                'tier': tier_name,
+                'weight_pct': round(w*100.0, 2),
+                'price': round(price, 2),
+                'upside_pct': round(up, 1),
+                'risk': risk,
+                'sector': sector,
+                'alpha_score': round(a_score, 2),
+                'stop_price': round(stop_price, 2) if stop_price else 0,
+                'target_price': round(target_price, 2) if target_price else 0
+            })
+            # expected contribution ~ weight * upside (rough heuristic)
+            exp_upside += w * max(0.0, up)
+
+        summary = {
+            'count': len(out_rows),
+            'core_count': len(core),
+            'opportunistic_count': len(opportunistic),
+            'expected_portfolio_upside_pct': round(exp_upside, 1)
+        }
+
+        return {'picks': out_rows, 'summary': summary}
+
+    def _suggest_tfsa_replacements(self, failed_syms: list[str]) -> list[dict]:
+        """Suggest replacements for failed symbols using the TFSA/Questrade universe.
+        For each failed symbol, pick a same-category alternative that was analyzed
+        successfully in this run (exists in base_results) to ensure data is available.
+        Returns list of {failed, replacement}.
+        """
+        if not failed_syms:
+            return []
+        try:
+            # Build symbol->category map from TFSA universe
+            from tfsa_questrade_750_universe import TFSA_QUESTRADE_UNIVERSE
+            sym_to_cat = {}
+            for cat, lst in TFSA_QUESTRADE_UNIVERSE.items():
+                for s in lst:
+                    sym_to_cat[s] = cat
+            analyzed_syms = set(self.base_results.keys())
+            used = set()
+            suggestions = []
+            for fs in failed_syms:
+                cat = sym_to_cat.get(fs)
+                replacement = None
+                if cat and cat in TFSA_QUESTRADE_UNIVERSE:
+                    for candidate in TFSA_QUESTRADE_UNIVERSE[cat]:
+                        if candidate != fs and candidate in analyzed_syms and candidate not in used:
+                            replacement = candidate
+                            break
+                # Fallback: pick any analyzed Canadian TSX or large cap tech
+                if not replacement:
+                    fallback_pools = []
+                    if 'canadian_tsx' in TFSA_QUESTRADE_UNIVERSE:
+                        fallback_pools.extend(TFSA_QUESTRADE_UNIVERSE['canadian_tsx'])
+                    if 'large_cap_tech' in TFSA_QUESTRADE_UNIVERSE:
+                        fallback_pools.extend(TFSA_QUESTRADE_UNIVERSE['large_cap_tech'])
+                    for cand in fallback_pools:
+                        if cand != fs and cand in analyzed_syms and cand not in used:
+                            replacement = cand
+                            break
+                if replacement:
+                    used.add(replacement)
+                    suggestions.append({'failed': fs, 'replacement': replacement})
+            return suggestions
+        except Exception:
+            return []
+
+    def _apply_guardrails_to_consensus(self, consensus_list: list[dict]):
+        """Remove high-risk consensus picks using conservative heuristics.
+        Returns (kept, removed_details).
+        """
+        kept = []
+        removed = []
+        biotech_keywords = {"biotech", "biotechnology", "life sciences", "genomics", "pharma", "pharmaceutical"}
+
+        for s in consensus_list:
+            base = self.base_results.get(s['symbol'], {})
+            price = float(s.get('current_price', base.get('current_price', 0)) or 0)
+            vol = int(base.get('volume', 0) or 0)
+            change1d = float(base.get('price_change_1d', 0) or 0)
+            sector = (s.get('sector', base.get('sector', '')) or '').lower()
+            vol_score = float(base.get('volatility_score', 50) or 50)
+            risk_level = base.get('risk_level', s.get('risk_level'))
+
+            reasons = []
+            if price > 0 and price < self.guard_min_price:
+                reasons.append(f"Price ${price:.2f} < ${self.guard_min_price:.2f}")
+            if vol < self.guard_min_volume:
+                reasons.append(f"Volume {vol:,} < {self.guard_min_volume:,}")
+            if abs(change1d) >= self.guard_max_abs_change_pct:
+                reasons.append(f"|1D| move {change1d:+.1f}% ≥ {self.guard_max_abs_change_pct:.0f}%")
+            if self.guard_exclude_biotech and any(k in sector for k in biotech_keywords) and (risk_level == 'High' or vol_score >= 70):
+                reasons.append("Biotech high-volatility")
+
+            if reasons:
+                removed.append({'symbol': s['symbol'], 'reasons': ", ".join(reasons)})
+            else:
+                kept.append(s)
+
+        return kept, removed
     
     def _determine_consensus_risk(self, buy_count: int, score_std: float) -> str:
         """Determine risk level based on consensus strength and score consistency"""
@@ -435,6 +713,34 @@ class FixedUltimateStrategyAnalyzer:
             import pandas as pd
             import os
             import subprocess
+            import time as _time
+            
+            # Lightweight market cap resolver using yfinance.fast_info
+            def _resolve_market_caps(symbols):
+                mc_map = {}
+                try:
+                    import yfinance as yf
+                except Exception:
+                    return mc_map
+                for sym in symbols:
+                    try:
+                        t = yf.Ticker(sym)
+                        fi = getattr(t, 'fast_info', None)
+                        mc = None
+                        if fi:
+                            try:
+                                mc = fi.get('market_cap', None)
+                            except Exception:
+                                mc = getattr(fi, 'market_cap', None)
+                        if mc:
+                            mc_map[sym] = int(mc)
+                        else:
+                            mc_map[sym] = None
+                        # tiny sleep to be gentle
+                        _time.sleep(0.02)
+                    except Exception:
+                        mc_map[sym] = None
+                return mc_map
             
             # Create exports directory if it doesn't exist
             exports_dir = os.path.join(os.path.dirname(__file__), 'exports')
@@ -461,7 +767,9 @@ class FixedUltimateStrategyAnalyzer:
                     'Metric': [
                         'Analysis Start Time',
                         'Analysis End Time',
+                        'Requested Universe',
                         'Total Stocks Analyzed',
+                        'Missing/Failed Symbols',
                         'Stocks with 4/4 Agreement',
                         'Stocks with 3/4 Agreement',
                         'Stocks with 2/4 Agreement',
@@ -473,7 +781,9 @@ class FixedUltimateStrategyAnalyzer:
                     'Value': [
                         self.analysis_start_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_start_time') else timestamp[:8] + ' ' + timestamp[9:],
                         self.analysis_end_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_end_time') else datetime.now().strftime("%Y%m%d %H%M%S"),
+                        results.get('requested_universe_count', results.get('total_stocks_analyzed', 0)),
                         results.get('total_stocks_analyzed', 0),
+                        results.get('skipped_count', 0),
                         results.get('stocks_4_of_4', 0),
                         results.get('stocks_3_of_4', 0),
                         results.get('stocks_2_of_4', 0),
@@ -488,7 +798,16 @@ class FixedUltimateStrategyAnalyzer:
                 
                 # Sheet 2: All Consensus Picks
                 consensus_data = []
+                # Prepare market cap backfill if base data is missing
+                symbols = [s['symbol'] for s in consensus_recs]
+                mc_backfill = _resolve_market_caps(symbols)
                 for stock in consensus_recs:
+                    # Use base market cap if available; otherwise try backfill
+                    base_mc = stock.get('market_cap', 0)
+                    if not base_mc:
+                        base_mc = self.base_results.get(stock['symbol'], {}).get('market_cap', 0)
+                    if not base_mc:
+                        base_mc = mc_backfill.get(stock['symbol']) or 0
                     consensus_data.append({
                         'Symbol': stock['symbol'],
                         'Consensus Score': round(stock['consensus_score'], 2),
@@ -499,7 +818,7 @@ class FixedUltimateStrategyAnalyzer:
                         'Risk Level': stock['risk_level'],
                         'Current Price': f"${stock.get('current_price', 0):.2f}",
                         'Upside Potential': f"{stock.get('upside_potential', 0):.1f}%",
-                        'Market Cap': stock.get('market_cap', 0),
+                        'Market Cap': int(base_mc) if base_mc else 0,
                         'Sector': stock.get('sector', 'Unknown')
                     })
                 
@@ -554,6 +873,40 @@ class FixedUltimateStrategyAnalyzer:
                         })
                     tier2_df = pd.DataFrame(tier2_data)
                     tier2_df.to_excel(writer, sheet_name='Tier3_2of4_Agreement', index=False)
+
+                # Sheet 6: Alpha+ Profit-Optimized Portfolio
+                alpha_plus = results.get('alpha_plus_portfolio') or {}
+                alpha_rows = (alpha_plus.get('picks') or [])
+                if alpha_rows:
+                    alpha_df = pd.DataFrame(alpha_rows)
+                    # Reorder columns for readability if present
+                    preferred_cols = ['symbol','tier','weight_pct','price','upside_pct','risk','sector','alpha_score','stop_price','target_price']
+                    alpha_df = alpha_df[[c for c in preferred_cols if c in alpha_df.columns]]
+                    alpha_df.to_excel(writer, sheet_name='AlphaPlus_Portfolio', index=False)
+
+                # Sheet 7: Skipped/Failed with reasons and suggested replacements
+                failures = results.get('failures') or []
+                skipped_syms = results.get('skipped_symbols') or []
+                repl = results.get('replacement_suggestions') or []
+                repl_map = {x.get('failed'): x.get('replacement') for x in repl if 'failed' in x}
+                failed_rows = []
+                if failures or skipped_syms:
+                    # Build a reason map from failures list
+                    reason_map = {}
+                    for item in failures:
+                        try:
+                            reason_map[item.get('symbol')] = item.get('reason')
+                        except Exception:
+                            pass
+                    for sym in skipped_syms:
+                        failed_rows.append({
+                            'Symbol': sym,
+                            'Reason': reason_map.get(sym, ''),
+                            'Suggested Replacement (TFSA/QT)': repl_map.get(sym, '')
+                        })
+                    if failed_rows:
+                        failed_df = pd.DataFrame(failed_rows)
+                        failed_df.to_excel(writer, sheet_name='Skipped_Failed', index=False)
             
             print(f"✅ Excel file created: {filename}")
             
@@ -609,6 +962,12 @@ class FixedUltimateStrategyAnalyzer:
             st.info("This usually means no stocks received BUY recommendations from any strategy.")
             return
         
+        # Show guardrail removals (if any)
+        removed_guard = recommendations.get('removed_by_guardrails') or []
+        if removed_guard:
+            with st.expander(f"🛡️ Guardrails removed {len(removed_guard)} high-risk picks (click to view)"):
+                st.dataframe(pd.DataFrame(removed_guard), width='stretch')
+
         # Calculate agreement tiers
         tier_4_of_4 = [r for r in consensus_recs if r['strategies_agreeing'] == 4]
         tier_3_of_4 = [r for r in consensus_recs if r['strategies_agreeing'] == 3]
@@ -617,24 +976,49 @@ class FixedUltimateStrategyAnalyzer:
         
         # Summary metrics
         st.markdown("### 📊 Consensus Summary")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
+        col0, col1, col2 = st.columns(3)
+        requested_universe = recommendations.get('requested_universe_count', recommendations.get('total_stocks_analyzed', 0))
         total_analyzed = recommendations.get('total_stocks_analyzed', 0)
-        
+        missing_failed = recommendations.get('skipped_count', max(0, requested_universe - total_analyzed))
+        with col0:
+            st.metric("Requested Universe", requested_universe)
         with col1:
             st.metric("Total Analyzed", total_analyzed)
         with col2:
-            st.metric("4/4 Agree (BEST)", len(tier_4_of_4), 
-                     help="All 4 strategies agree - LOWEST RISK")
-        with col3:
-            st.metric("3/4 Agree (HIGH)", len(tier_3_of_4),
-                     help="3 strategies agree - LOW RISK")
-        with col4:
-            st.metric("2/4 Agree (GOOD)", len(tier_2_of_4),
-                     help="2 strategies agree - MEDIUM RISK")
-        with col5:
-            st.metric("1/4 Agree", len(tier_1_of_4),
-                     help="1 strategy recommends - HIGHER RISK")
+            st.metric("Missing/Failed", missing_failed)
+
+        colA, colB, colC, colD = st.columns(4)
+        with colA:
+            st.metric("4/4 Agree (BEST)", len(tier_4_of_4), help="All 4 strategies agree - LOWEST RISK")
+        with colB:
+            st.metric("3/4 Agree (HIGH)", len(tier_3_of_4), help="3 strategies agree - LOW RISK")
+        with colC:
+            st.metric("2/4 Agree (GOOD)", len(tier_2_of_4), help="2 strategies agree - MEDIUM RISK")
+        with colD:
+            st.metric("1/4 Agree", len(tier_1_of_4), help="1 strategy recommends - HIGHER RISK")
+
+        # Skipped/Failed details and TFSA/Questrade replacements
+        fails = recommendations.get('failures') or []
+        skipped_syms = recommendations.get('skipped_symbols') or []
+        replacements = recommendations.get('replacement_suggestions') or []
+        if skipped_syms:
+            with st.expander(f"⚠️ {len(skipped_syms)} symbols failed or were skipped — see reasons and TFSA/QT replacements"):
+                reason_map = {}
+                for item in fails:
+                    try:
+                        reason_map[item.get('symbol')] = item.get('reason')
+                    except Exception:
+                        pass
+                repl_map = {x.get('failed'): x.get('replacement') for x in replacements if isinstance(x, dict)}
+                rows = []
+                for s in skipped_syms:
+                    rows.append({
+                        'Symbol': s,
+                        'Reason': reason_map.get(s, ''),
+                        'Suggested Replacement (TFSA/QT)': repl_map.get(s, '')
+                    })
+                if rows:
+                    st.dataframe(pd.DataFrame(rows), width='stretch')
         
         # Show all tiers
         if tier_4_of_4:
@@ -656,7 +1040,7 @@ class FixedUltimateStrategyAnalyzer:
                 })
             
             df1 = pd.DataFrame(tier1_data)
-            st.dataframe(df1, use_container_width=True, hide_index=True)
+            st.dataframe(df1, width='stretch', hide_index=True)
             st.success(f"✅ **{len(tier_4_of_4)} stocks** where ALL 4 strategies agree!")
         else:
             st.info("ℹ️ No stocks with 4/4 agreement.")
@@ -680,7 +1064,7 @@ class FixedUltimateStrategyAnalyzer:
                 })
             
             df2 = pd.DataFrame(tier2_data)
-            st.dataframe(df2, use_container_width=True, hide_index=True)
+            st.dataframe(df2, width='stretch', hide_index=True)
             st.success(f"✅ **{len(tier_3_of_4)} stocks** with 3/4 agreement!")
         else:
             st.info("ℹ️ No stocks with 3/4 agreement.")
@@ -704,7 +1088,7 @@ class FixedUltimateStrategyAnalyzer:
                 })
             
             df3 = pd.DataFrame(tier3_data)
-            st.dataframe(df3, use_container_width=True, hide_index=True)
+            st.dataframe(df3, width='stretch', hide_index=True)
             st.info(f"ℹ️ **{len(tier_2_of_4)} stocks** with 2/4 agreement.")
         else:
             st.info("ℹ️ No stocks with 2/4 agreement.")
@@ -717,6 +1101,30 @@ class FixedUltimateStrategyAnalyzer:
         
         st.markdown("---")
         st.success("✅ Analysis complete! Review the tiers above and build your portfolio based on your risk tolerance.")
+
+        # Alpha+ (Profit Optimized) Portfolio
+        alpha_plus = recommendations.get('alpha_plus_portfolio') or {}
+        alpha_rows = alpha_plus.get('picks') or []
+        if alpha_rows:
+            st.markdown("---")
+            st.markdown("## 💹 ULTIMATE STRATEGY ALPHA+ (Profit Optimized)")
+            sm = alpha_plus.get('summary') or {}
+            cols = st.columns(3)
+            cols[0].metric("Total Positions", sm.get('count', len(alpha_rows)))
+            cols[1].metric("Core (Tier 1-2)", sm.get('core_count', 0))
+            cols[2].metric("Opportunistic (Tier 3)", sm.get('opportunistic_count', 0))
+            st.info(f"Expected portfolio upside (heuristic): ~{sm.get('expected_portfolio_upside_pct', 0)}%")
+
+            alpha_df = pd.DataFrame(alpha_rows)
+            # Pretty rename for display
+            col_map = {
+                'symbol':'Symbol', 'tier':'Tier', 'weight_pct':'Weight %', 'price':'Price',
+                'upside_pct':'Upside %','risk':'Risk','sector':'Sector','alpha_score':'Alpha Score',
+                'stop_price':'Stop','target_price':'Target'
+            }
+            alpha_df = alpha_df[[c for c in ['symbol','tier','weight_pct','price','upside_pct','risk','sector','alpha_score','stop_price','target_price'] if c in alpha_df.columns]]
+            alpha_df = alpha_df.rename(columns=col_map)
+            st.dataframe(alpha_df, width='stretch', hide_index=True)
         
         # V5.0 Improvements Callout
         with st.expander("📊 What's New in V5.0 - Click to Learn More", expanded=False):

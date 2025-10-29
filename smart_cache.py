@@ -23,11 +23,11 @@ class SmartCache:
         
         # Cache durations for different data types
         self.durations = {
-            'history': timedelta(hours=4),      # OHLCV data - 4 hours
+            'history': timedelta(hours=1),       # OHLCV data - 1 hour for fresher reads
             'info': timedelta(hours=6),          # Company info - 6 hours
             'fundamentals': timedelta(hours=12), # Fundamental data - 12 hours
-            'news': timedelta(hours=2),          # News - 2 hours
-            'analysis': timedelta(hours=4),      # Analysis results - 4 hours
+            'news': timedelta(hours=1),          # News - 1 hour
+            'analysis': timedelta(hours=2),      # Analysis results - 2 hours
         }
         
         print(f"💾 Smart Cache initialized at {self.cache_dir}")

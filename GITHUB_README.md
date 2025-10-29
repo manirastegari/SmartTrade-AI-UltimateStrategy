@@ -26,7 +26,7 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 - **Professional Dashboard** - Interactive charts and comprehensive metrics
 
 ### 📊 **Coverage**
-- **500+ Stocks** - Major US and Canadian markets
+- **700+ Stocks** - TFSA/Questrade-ready US and Canadian universe
 - **Multiple Sectors** - Tech, Healthcare, Financial, Energy, Consumer, Industrial
 - **Market Cap Range** - Large cap, mid cap, small cap stocks
 - **Real-time Updates** - Fresh data every analysis
@@ -74,8 +74,7 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 
 ## 📈 How It Works
 
-### 1. **Data Collection**
-- Fetches 2 years of historical data for each stock
+- Fetches 2 years of historical data for each stock (with 1-hour freshness caching for stability)
 - Downloads real-time quotes, volume, and fundamental data
 - Scrapes news from multiple sources
 - Tracks insider trading and options data
@@ -94,8 +93,7 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 - **Financial Health**: Profit margins, ROE, debt levels
 - **Sector Performance**: Relative strength analysis
 
-### 4. **Machine Learning Predictions**
-- **4 ML Models**: Random Forest, XGBoost, Gradient Boosting, Extra Trees
+- **4 ML Models**: Random Forest, XGBoost, Gradient Boosting, Extra Trees (deterministic)
 - **80+ Features**: Technical, fundamental, sentiment, market data
 - **Ensemble Prediction**: Weighted combination of all models
 - **Confidence Scoring**: Measures prediction reliability
@@ -106,11 +104,11 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 - **Sentiment Signals**: News sentiment analysis
 - **Market Signals**: Insider, options, institutional activity
 
-## 🎯 Accuracy Levels
+## 🎯 Accuracy & Reliability
 
-- **Short-term (1-5 days)**: 75-85% accuracy
-- **Medium-term (1-4 weeks)**: 80-90% accuracy
-- **Long-term (1-6 months)**: 85-95% accuracy
+- Four-perspective optimized run (same analytical depth, one download pass)
+- Strictly real data (no synthetic fills); symbols with no real data are skipped
+- Smart cache with 1-hour freshness keeps runs snappy while staying up-to-date
 
 ## 📋 Supported Stocks
 
@@ -168,7 +166,7 @@ Enhanced Trading Signals:
 ## 🛠️ Customization
 
 ### Adding New Stocks
-Edit the `stock_universe` list in the analyzer files:
+Edit the TFSA/Questrade universe (recommended): `tfsa_questrade_750_universe.py`
 ```python
 self.stock_universe = [
     'AAPL', 'MSFT', 'GOOGL',  # Add your stocks here
@@ -179,7 +177,7 @@ self.stock_universe = [
 ### Adjusting Analysis Parameters
 Modify the analysis thresholds in the analyzer methods:
 ```python
-# Change prediction thresholds
+# Change prediction thresholds (example)
 if prediction > 0.05 and confidence > 0.7:  # Adjust these values
     recommendation = 'STRONG BUY'
 ```

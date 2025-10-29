@@ -38,6 +38,44 @@ def get_cleaned_high_potential_universe():
                 'PGR', 'ICE', 'BMY', 'PYPL', 'CME', 'APH', 'WM', 'AON', 'MCO', 'USB',
             ]
 
+
+def sanitize_runtime_universe(universe, failed_symbols=None, target_min=730):
+    """At runtime, drop symbols that failed across all sources and backfill from a reserve pool.
+
+    Inputs:
+    - universe: list[str] initial universe
+    - failed_symbols: list[str] symbols that had 'ALL FREE SOURCES FAILED' or 'No real data' in this run
+    - target_min: int desired minimum count after sanitation
+
+    Output:
+    - list[str] sanitized universe sized at least target_min (if possible)
+    """
+    failed_set = set([s.strip() for s in (failed_symbols or []) if isinstance(s, str)])
+    # Drop failures
+    filtered = [s for s in universe if s not in failed_set]
+
+    # Try to reuse the reserve pool from the TFSA universe module; otherwise fallback to a safe local pool
+    reserve = []
+    try:
+        from tfsa_questrade_750_universe import RESERVE_POOL as _RES
+        reserve = list(_RES)
+    except Exception:
+        reserve = [
+            'AAPL','MSFT','NVDA','GOOGL','AMZN','META','AVGO','ORCL','ADBE','CRM',
+            'V','MA','KO','PEP','PG','COST','WMT','HD','LOW','TJX',
+            'RY.TO','TD.TO','BMO.TO','BNS.TO','CM.TO','NA.TO','ENB.TO','TRP.TO','CNQ.TO','SU.TO',
+        ]
+
+    seen = set(filtered)
+    for sym in reserve:
+        if len(filtered) >= target_min:
+            break
+        if sym not in seen:
+            filtered.append(sym)
+            seen.add(sym)
+
+    return filtered
+
 if __name__ == "__main__":
     universe = get_cleaned_high_potential_universe()
     print(f"Cleaned universe: {len(universe)} stocks")

@@ -94,8 +94,8 @@ TFSA_QUESTRADE_UNIVERSE = {
         'CMS', 'EVRG', 'NI', 'PNW',
         
         # Clean Energy & Solar (20)
-        'FSLR', 'ENPH', 'SEDG', 'RUN', 'NOVA', 'SPWR', 'CSIQ', 'JKS',
-        'MAXN', 'ARRY', 'SOL', 'SHLS', 'VVNT', 'AMPS', 'FLNC', 'STEM',
+    'FSLR', 'ENPH', 'SEDG', 'RUN', 'AES', 'SPWR', 'CSIQ', 'JKS',
+        'MAXN', 'ARRY', 'SOL', 'SHLS', 'FLNC', 'STEM',
         'BE', 'BLDP', 'PLUG', 'FCEL'
     ],
     
@@ -112,9 +112,9 @@ TFSA_QUESTRADE_UNIVERSE = {
         'RY.TO', 'TD.TO', 'BMO.TO', 'BNS.TO', 'CM.TO', 'NA.TO',
         'BN.TO', 'MFC.TO', 'SLF.TO', 'GWO.TO',
         
-        # Payment Processors (10)
-        'V', 'MA', 'PYPL', 'SQ', 'FI', 'FIS', 'FISV', 'GPN',
-        'AXP', 'DFS',
+    # Payment Processors (10)
+    'V', 'MA', 'PYPL', 'WEX', 'FI', 'FIS', 'PAYX', 'GPN',
+    'AXP', 'MSCI',
         
         # Asset Managers (15)
         'BLK', 'BX', 'KKR', 'APO', 'ARES', 'CG', 'TROW', 'IVZ',
@@ -140,14 +140,14 @@ TFSA_QUESTRADE_UNIVERSE = {
         'GIS', 'K', 'CPB', 'SJM', 'CAG', 'MKC', 'CHD', 'CLX',
         'HSY', 'KHC', 'TSN', 'HRL',
         
-        # Retail Giants (20)
-        'HD', 'LOW', 'TGT', 'TJX', 'ROST', 'DG', 'DLTR', 'BBY',
-        'FIVE', 'BURL', 'ULTA', 'GPS', 'ANF', 'AEO', 'URBN', 'EXPR',
-        'DKS', 'TSCO', 'GPC', 'POOL',
+    # Retail Giants (20)
+    'HD', 'LOW', 'TGT', 'TJX', 'ROST', 'DG', 'DLTR', 'BBY',
+    'FIVE', 'BURL', 'ULTA', 'OLLI', 'ANF', 'AEO', 'URBN', 'WEN',
+    'DKS', 'TSCO', 'GPC', 'POOL',
         
         # Restaurants & Food (15)
         'MCD', 'SBUX', 'YUM', 'QSR', 'CMG', 'DPZ', 'WING', 'TXRH',
-        'BLMN', 'DENN', 'EAT', 'CAKE', 'PLAY', 'BJRI', 'CHUY',
+    'BLMN', 'DENN', 'EAT', 'CAKE', 'PLAY', 'BJRI', 'DRI',
         
         # Apparel & Footwear (15)
         'NKE', 'LULU', 'CROX', 'DECK', 'VFC', 'UAA', 'RL', 'PVH',
@@ -159,9 +159,9 @@ TFSA_QUESTRADE_UNIVERSE = {
     # Manufacturing, aerospace, materials
     # ========================================================================
     'large_cap_industrials': [
-        # Aerospace & Defense (15)
-        'RTX', 'LMT', 'BA', 'NOC', 'GD', 'LHX', 'TDG', 'HWM',
-        'HEI', 'TXT', 'LDOS', 'KTOS', 'AVAV', 'IRDM', 'AJRD',
+    # Aerospace & Defense (15)
+    'RTX', 'LMT', 'BA', 'NOC', 'GD', 'LHX', 'TDG', 'HWM',
+    'HEI', 'TXT', 'LDOS', 'KTOS', 'AVAV', 'IRDM', 'HII',
         
         # Industrial Conglomerates (15)
         'GE', 'HON', 'CAT', 'DE', 'EMR', 'ITW', 'MMM', 'ETN',
@@ -172,8 +172,8 @@ TFSA_QUESTRADE_UNIVERSE = {
         'JBHT', 'KNX',
         
         # Materials & Mining (10)
-        'LIN', 'APD', 'SHW', 'ECL', 'NEM', 'FCX', 'GOLD', 'SCCO',
-        'TECK.TO', 'ABX.TO'
+        'LIN', 'APD', 'SHW', 'ECL', 'NEM', 'FCX', 'AEM', 'SCCO',
+        'TECK', 'ABX.TO'
     ],
     
     # ========================================================================
@@ -182,22 +182,22 @@ TFSA_QUESTRADE_UNIVERSE = {
     # ========================================================================
     'mid_cap_tech': [
         # SaaS & Cloud (30)
-        'APP', 'BILL', 'DOMO', 'FROG', 'SMAR', 'QTWO', 'ALKT', 'ENV',
-        'ALRM', 'BLKB', 'BOX', 'CDAY', 'CXM', 'DBX', 'DOCN', 'DT',
-        'DV', 'EGHT', 'ENFN', 'ETWO', 'FIVN', 'FLYW', 'FORG', 'FOUR',
-        'FRGE', 'FRSH', 'GBTG', 'GWRE', 'INST', 'IOT',
+        'APP', 'BILL', 'DOMO', 'FROG', 'QTWO', 'ALKT',
+        'ALRM', 'BLKB', 'BOX', 'CXM', 'DBX', 'DOCN', 'DT',
+        'DV', 'EGHT', 'FIVN', 'FLYW', 'FOUR',
+        'FRGE', 'FRSH', 'GBTG', 'GWRE', 'IOT', 'DUOL', 'COUR',
         
         # Cybersecurity (15)
         'PANW', 'CRWD', 'ZS', 'OKTA', 'CYBR', 'TENB', 'QLYS', 'VRNS',
         'SAIL', 'RPD', 'FSLY', 'AKAM', 'PFPT', 'RDWR', 'SCWX',
         
         # Semiconductors (20)
-        'AEHR', 'AOSL', 'DIOD', 'FORM', 'HIMX', 'MXL', 'POWI', 'SITM',
-        'SMTC', 'SYNA', 'VICR', 'VECO', 'UCTT', 'TTMI', 'RMBS', 'PLAB',
-        'CEVA', 'AAOI', 'OIIM', 'GSIT',
+    'AEHR', 'AOSL', 'DIOD', 'FORM', 'HIMX', 'MXL', 'POWI', 'SITM',
+    'SMTC', 'SYNA', 'VICR', 'VECO', 'UCTT', 'TTMI', 'RMBS', 'PLAB',
+    'CEVA', 'AAOI', 'LSCC', 'GSIT',
         
         # Other Tech (15)
-        'JAMF', 'KARO', 'IDCC', 'INFA', 'AYX', 'BASE', 'BIGC', 'BL',
+    'JAMF', 'KARO', 'IDCC', 'INFA', 'TTD', 'BASE', 'SHOP', 'BL',
         'BMBL', 'BRZE', 'DFIN', 'ASAN', 'ATEN', 'AVPT', 'EXTR'
     ],
     
@@ -320,6 +320,45 @@ TFSA_QUESTRADE_UNIVERSE = {
     ]
 }
 
+# Known replacements/removals from recent run logs to ensure TFSA/Questrade availability
+# None means drop the symbol entirely
+KNOWN_REPLACEMENTS = {
+    'TECK.TO': 'TECK',
+    'GOLD': 'AEM',
+    'FISV': 'WEX',
+    'SQ': 'PAYX',
+    'VVNT': None,
+    'AMPS': None,
+    'NOVA': 'AY',
+    'EXPR': None,
+    'GPS': None,
+    'AJRD': 'HII',
+    'OIIM': 'LSCC',
+    'AYX': 'TTD',
+    'SMAR': None,
+    'ENV': 'PAYX',
+    'CDAY': None,
+    'ENFN': None,
+    'ETWO': None,
+    'FORG': None,
+    'INST': None,
+    'PFPT': None,
+    'SCWX': None,
+}
+
+# Stable reserve pool for backfilling if replacements reduce universe size too much
+RESERVE_POOL = [
+    # US Mega/Large caps widely available on Questrade TFSA
+    'AAPL','MSFT','NVDA','GOOGL','AMZN','META','AVGO','ORCL','ADBE','CRM',
+    'V','MA','KO','PEP','PG','COST','WMT','HD','LOW','TJX','LIN','APD','SHW','ECL',
+    'NEM','FCX','AEM','SCCO','UNH','LLY','JNJ','ABBV','MRK','GE','CAT','DE','HON',
+    # Canadian blue chips
+    'RY.TO','TD.TO','BMO.TO','BNS.TO','CM.TO','NA.TO','ENB.TO','TRP.TO','CNQ.TO','SU.TO',
+    # Additional high-quality fillers (often absent in themed lists)
+    'ADP','MSCI','SPGI','MSI','CDW','ORLY','AZO','KR','CMI','PHM','LEN','DHI','NVR',
+    'CPRT','URI','EFX','NDAQ','PWR','OTIS','CARR','TT','ELV','HIG','KDP'
+]
+
 # Flatten all stocks into single list
 def get_full_universe():
     """Get complete 750-stock universe as flat list"""
@@ -331,9 +370,24 @@ def get_full_universe():
     seen = set()
     unique_stocks = []
     for stock in all_stocks:
-        if stock not in seen:
-            seen.add(stock)
-            unique_stocks.append(stock)
+        # Apply known replacements/removals
+        replacement = KNOWN_REPLACEMENTS.get(stock, stock)
+        if replacement is None:
+            continue  # drop
+        stock_final = replacement
+        if stock_final not in seen:
+            seen.add(stock_final)
+            unique_stocks.append(stock_final)
+    
+    # Backfill from reserve pool if we dropped too many
+    TARGET_MIN = 730
+    if len(unique_stocks) < TARGET_MIN:
+        for sym in RESERVE_POOL:
+            if sym not in seen:
+                unique_stocks.append(sym)
+                seen.add(sym)
+            if len(unique_stocks) >= TARGET_MIN:
+                break
     
     return unique_stocks
 

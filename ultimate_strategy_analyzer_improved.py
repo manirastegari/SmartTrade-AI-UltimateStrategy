@@ -30,6 +30,35 @@ class ImprovedUltimateStrategyAnalyzer:
         self.analyzer = analyzer
         self.strategy_results = {}
         self.consensus_recommendations = []
+    # Universe size tracking (for UI/Excel reporting)
+    self.initial_universe_count: int = 0
+    self.filtered_universe_count: int | None = None
+    self.filtered_removed_count: int | None = None
+
+    def _filter_reliable_universe(self, results: List[Dict]) -> List[Dict]:
+        """Filter out penny stocks and micro/small illiquid names to improve reliability.
+        Rules (conservative, no new settings):
+        - Exclude if current_price < $5
+        - Exclude if market_cap < $300M
+        """
+        filtered: List[Dict] = []
+        removed = 0
+        for r in results or []:
+            try:
+                price = float(r.get('current_price', 0) or 0)
+                mc = float(r.get('market_cap', 0) or 0)
+                if price >= 5.0 and mc >= 300_000_000:
+                    filtered.append(r)
+                else:
+                    removed += 1
+            except Exception:
+                removed += 1
+        if removed > 0:
+            try:
+                print(f"🔎 Reliability filter removed {removed} penny/micro-cap stocks; kept {len(filtered)}")
+            except Exception:
+                pass
+        return filtered
         
     def run_ultimate_strategy(self, progress_callback=None):
         """
@@ -51,11 +80,12 @@ class ImprovedUltimateStrategyAnalyzer:
         if progress_callback:
             progress_callback("Starting IMPROVED Ultimate Strategy Analysis...", 0)
         
-        # STEP 1: Get the FULL universe (all 716 stocks)
+        # STEP 1: Get the FULL universe (TFSA/Questrade-eligible source)
         if progress_callback:
-            progress_callback("Loading full stock universe (716 stocks)...", 5)
+            progress_callback("Loading full stock universe...", 5)
         
         full_universe = self.analyzer._get_expanded_stock_universe()
+        self.initial_universe_count = len(full_universe or [])
         
         if progress_callback:
             progress_callback(f"Loaded {len(full_universe)} stocks for analysis", 8)
@@ -167,6 +197,18 @@ class ImprovedUltimateStrategyAnalyzer:
             symbols=universe
         )
         
+        # Reliability filter: remove penny stocks and micro-caps before scoring
+        pre_filter_count = len(results or [])
+        results = self._filter_reliable_universe(results)
+        post_filter_count = len(results or [])
+
+        # Capture filtered universe size once (same universe used across all strategies)
+        if self.filtered_universe_count is None:
+            self.filtered_universe_count = post_filter_count
+            # If analyzer couldn't analyze all symbols, use analyzed count as baseline for removal calc
+            baseline = pre_filter_count if pre_filter_count > 0 else self.initial_universe_count
+            self.filtered_removed_count = max(baseline - post_filter_count, 0)
+
         # Restore original training setting
         self.analyzer.enable_training = original_training
         
@@ -378,7 +420,10 @@ class ImprovedUltimateStrategyAnalyzer:
         )
         
         # Calculate actual stocks analyzed (at least 1 strategy analyzed it)
-        total_stocks_analyzed = len(all_symbols)
+    total_stocks_analyzed = len(all_symbols)
+    # Determine available universe (post-reliability filter)
+    available_universe = self.filtered_universe_count if self.filtered_universe_count is not None else total_stocks_analyzed
+    removed_count = self.filtered_removed_count if self.filtered_removed_count is not None else max(self.initial_universe_count - available_universe, 0)
         
         # Count stocks by agreement level
         stocks_4_of_4 = len([s for s in consensus_stocks if s['strategies_agreeing'] == 4])
@@ -401,6 +446,9 @@ class ImprovedUltimateStrategyAnalyzer:
             'sector_analysis': sector_analysis,
             'strategy_results': self.strategy_results,
             'total_stocks_analyzed': total_stocks_analyzed,
+            'initial_universe_count': self.initial_universe_count,
+            'available_universe_count': available_universe,
+            'filtered_out_count': removed_count,
             'stocks_4_of_4': stocks_4_of_4,
             'stocks_3_of_4': stocks_3_of_4,
             'stocks_2_of_4': stocks_2_of_4,
@@ -418,13 +466,26 @@ class ImprovedUltimateStrategyAnalyzer:
             return 'High'
     
     def _analyze_market_conditions(self) -> Dict:
-        """Analyze overall market conditions"""
-        # Simplified market analysis
-        return {
-            'status': 'NEUTRAL',
-            'vix': 15.0,
-            'trend': 'SIDEWAYS'
-        }
+        """Analyze overall market conditions (no synthetic values)."""
+        try:
+            ctx = self.analyzer.data_fetcher.get_market_context()
+            vix = ctx.get('vix_proxy', None)
+            spy_ret = ctx.get('spy_return_1d', None)
+            status = 'NEUTRAL'
+            trend = 'SIDEWAYS'
+            if vix is not None:
+                if vix < 18:
+                    status = 'BULLISH'
+                elif vix > 28:
+                    status = 'BEARISH'
+            if spy_ret is not None:
+                if spy_ret > 0.01:
+                    trend = 'UP'
+                elif spy_ret < -0.01:
+                    trend = 'DOWN'
+            return {'status': status, 'vix': vix, 'trend': trend}
+        except Exception:
+            return {'status': 'NEUTRAL', 'vix': None, 'trend': 'SIDEWAYS'}
     
     def _analyze_sector_trends(self) -> Dict:
         """Analyze sector trends"""
@@ -466,6 +527,8 @@ class ImprovedUltimateStrategyAnalyzer:
                     'Metric': [
                         'Analysis Start Time',
                         'Analysis End Time',
+                        'TFSA/Questrade Available Stocks',
+                        'Penny/Micro-cap Removed',
                         'Total Stocks Analyzed',
                         'Stocks with 4/4 Agreement',
                         'Stocks with 3/4 Agreement',
@@ -476,6 +539,8 @@ class ImprovedUltimateStrategyAnalyzer:
                     'Value': [
                         self.analysis_start_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_start_time') else timestamp[:8] + ' ' + timestamp[9:],
                         self.analysis_end_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_end_time') else datetime.now().strftime("%Y%m%d %H%M%S"),
+                        results.get('available_universe_count', 0),
+                        results.get('filtered_out_count', 0),
                         results.get('total_stocks_analyzed', 0),
                         results.get('stocks_4_of_4', 0),
                         results.get('stocks_3_of_4', 0),
@@ -613,22 +678,28 @@ class ImprovedUltimateStrategyAnalyzer:
         col1, col2, col3, col4 = st.columns(4)
         
         total_analyzed = recommendations.get('total_stocks_analyzed', 0)
+        available_universe = recommendations.get('available_universe_count', total_analyzed)
+        filtered_out = recommendations.get('filtered_out_count', 0)
         
         with col1:
-            st.metric("Total Analyzed", total_analyzed)
+            st.metric("Available (TFSA)", available_universe, help="Post-filter, TFSA/Questrade-ready universe")
         with col2:
-            st.metric("4/4 Agree (BEST)", len(tier_4_of_4), 
-                     help="All 4 strategies agree - LOWEST RISK")
+            st.metric("Filtered Out", filtered_out, help="Penny/micro-cap removed for reliability")
         with col3:
-            st.metric("3/4 Agree (HIGH)", len(tier_3_of_4),
-                     help="3 strategies agree - LOW RISK")
+            st.metric("Total Analyzed", total_analyzed)
         with col4:
-            st.metric("2/4 Agree (GOOD)", len(tier_2_of_4),
-                     help="2 strategies agree - MEDIUM RISK")
+            st.metric("4/4 Agree (BEST)", len(tier_4_of_4), help="All 4 strategies agree - LOWEST RISK")
+
+        # Secondary row for remaining tiers
+        colA, colB = st.columns(2)
+        with colA:
+            st.metric("3/4 Agree (HIGH)", len(tier_3_of_4), help="3 strategies agree - LOW RISK")
+        with colB:
+            st.metric("2/4 Agree (GOOD)", len(tier_2_of_4), help="2 strategies agree - MEDIUM RISK")
         
         # Show warning if total analyzed is suspiciously low
         if total_analyzed < 100:
-            st.warning(f"⚠️ Only {total_analyzed} stocks were analyzed. This is much lower than expected (779). Check logs for errors.")
+            st.warning(f"⚠️ Only {total_analyzed} stocks were analyzed. This is lower than expected. Check logs for data issues.")
         
         # Expected returns
         st.markdown("### 📈 Expected Portfolio Returns")

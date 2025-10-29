@@ -13,7 +13,9 @@ from typing import Optional
 class CostEffectiveDataManager:
     """Manages the most cost-effective reliable data sources"""
     
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
+        # Verbose=True prints per-source attempts; False prints concise summary only
+        self.verbose = verbose
         self.sources = {
             'alpha_vantage_free': AlphaVantageFree(),
             'finnhub_free': FinnhubFree(), 
@@ -35,42 +37,43 @@ class CostEffectiveDataManager:
             'iex_cloud_paid': 9           # $9/month for 500,000 calls
         }
         
-        print("💰 COST-EFFECTIVE DATA SOURCES:")
-        print("   🆓 Alpha Vantage: FREE (500 calls/day)")
-        print("   🆓 Finnhub: FREE (60 calls/minute = 86,400/day)")
-        print("   🆓 FMP: FREE (250 calls/day)")
-        print("   🆓 IEX Cloud: FREE (100 calls/month)")
-        print("   🆓 Yahoo Direct: FREE (unlimited but unstable)")
-        print()
-        print("💡 RECOMMENDED: Use FREE tiers = $0/month!")
-        print("   📊 Total capacity: 1,000+ stocks/day FREE")
+        if self.verbose:
+            print("💰 COST-EFFECTIVE DATA SOURCES:")
+            print("   🆓 Alpha Vantage: FREE (500 calls/day)")
+            print("   🆓 Finnhub: FREE (60 calls/minute = 86,400/day)")
+            print("   🆓 FMP: FREE (250 calls/day)")
+            print("   🆓 IEX Cloud: FREE (100 calls/month)")
+            print("   🆓 Yahoo Direct: FREE (unlimited but unstable)")
+            print()
+            print("💡 RECOMMENDED: Use FREE tiers = $0/month!")
+            print("   📊 Total capacity: 1,000+ stocks/day FREE")
     
     def get_stock_data(self, symbol: str, period: str = "2y") -> Optional[pd.DataFrame]:
         """Get stock data using free sources first"""
         
         # Try free sources in order of capacity (Yahoo first - unlimited)
         free_sources = ['yahoo_direct', 'finnhub_free', 'alpha_vantage_free', 'fmp_free']
-        
+        tried = []
         for source_name in free_sources:
             try:
-                print(f"🆓 Trying {source_name} for {symbol}...")
+                if self.verbose:
+                    print(f"🆓 Trying {source_name} for {symbol}...")
                 source = self.sources[source_name]
                 data = source.get_historical_data(symbol, period)
-                
-                if data is not None and not data.empty and len(data) > 20:
-                    if self._validate_data(data, symbol):
+                tried.append(source_name)
+                if data is not None and not data.empty and len(data) > 20 and self._validate_data(data, symbol):
+                    if self.verbose:
                         print(f"✅ {source_name} SUCCESS: {len(data)} days for {symbol} (FREE)")
-                        return data
                     else:
-                        print(f"⚠️ {source_name} data validation failed for {symbol}")
-                else:
-                    print(f"❌ {source_name} returned no data for {symbol}")
-                    
+                        print(f"✅ FREE DATA SUCCESS: {len(data)} days for {symbol} (source: {source_name})")
+                    return data
             except Exception as e:
-                print(f"❌ {source_name} error for {symbol}: {str(e)[:50]}")
+                if self.verbose:
+                    print(f"❌ {source_name} error for {symbol}: {str(e)[:50]}")
                 continue
-        
-        print(f"🚨 ALL FREE SOURCES FAILED for {symbol}")
+        # All failed
+        tried_list = ", ".join(tried) if tried else "none"
+        print(f"⚠️ Data unavailable across free sources for {symbol} ({tried_list}). Skipping.")
         return None
     
     def _validate_data(self, df: pd.DataFrame, symbol: str) -> bool:

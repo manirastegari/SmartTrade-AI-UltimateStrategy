@@ -5,6 +5,21 @@ All notable changes to SmartTrade AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-10-28
+
+### Changed
+- TFSA/Questrade 750 universe refreshed to remove tickers failing free sources or not tradable in TFSA on Questrade.
+- Mapped and replaced legacy/problematic symbols based on run logs: e.g., TECK.TO → TECK, GOLD → AEM, FISV → WEX; removed SQ, VVNT, AMPS, EXPR, GPS, AJRD, OIIM, SMAR, ENV, CDAY, ENFN, ETWO, FORG, INST, PFPT, SCWX, AYX; added PAYX, AY, OLLI, WEN, HII, LSCC, TTD, DUOL, COUR.
+- Universe size stabilized to ~730 using a reserve pool of stable TFSA-friendly US/TSX leaders.
+ - Additional replacements per latest run logs: BIGC → SHOP, CHUY → DRI, DFS → MSCI, AY → AES.
+
+### Added
+- Runtime universe sanitizer helper: drop symbols that failed across all free sources in a run and backfill from a stable reserve to keep counts consistent (see `sanitize_runtime_universe` in `cleaned_high_potential_universe.py`).
+
+### Notes
+- No synthetic data introduced. All replacements are actively traded and TFSA/Questrade-friendly.
+- UI/Excel already show Available (TFSA) vs Filtered counts; these changes keep those metrics accurate with fewer skips.
+
 ## [2.0.0] - 2024-09-14
 
 ### Added

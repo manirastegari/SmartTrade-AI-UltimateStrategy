@@ -120,11 +120,11 @@ Position Size: 3% of portfolio
 
 ## 📊 Supported Markets
 
-### **US Markets (NYSE/NASDAQ)**
-- **1000+ Stocks**: Major US markets
+### **US & Canadian Markets (NYSE/NASDAQ/TSX)**
+- **700+ Stocks**: TFSA/Questrade-ready US & Canadian universe
 - **All Sectors**: Tech, Healthcare, Financial, Energy, Consumer
 - **Market Caps**: Large cap, mid cap, small cap
-- **Real-time Data**: Live quotes and analysis
+- **Real-time Data**: Live quotes and analysis (with 1-hour freshness caching for stability)
 
 ### **Professional Analysis Types**
 - **Institutional Grade**: Full professional analysis

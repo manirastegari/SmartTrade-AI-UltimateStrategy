@@ -29,6 +29,7 @@ import functools
 import hashlib
 import pickle
 import os
+import random
 
 # Try to import advanced ML libraries
 try:
@@ -52,7 +53,28 @@ class AdvancedTradingAnalyzer:
         # Expanded stock universe - 1000+ stocks
         self.stock_universe = self._get_expanded_stock_universe()
         # Use light mode by default to avoid rate-limited endpoints
-        self.data_fetcher = AdvancedDataFetcher(alpha_vantage_key, fred_api_key, data_mode=data_mode)
+        # Allow Alpha Vantage key via env var if not explicitly passed
+        try:
+            import os as _os
+            _env_key = None
+            if alpha_vantage_key is None:
+                # Support both env var spellings
+                _env_key = (
+                    _os.environ.get('ALPHA_VANTAGE_API_KEY')
+                    or _os.environ.get('ALPHAVANTAGE_API_KEY')
+                )
+        except Exception:
+            _env_key = None
+        # Optional repo-level hardcoded key as final source
+        _repo_key = None
+        if alpha_vantage_key is None and _env_key is None:
+            try:
+                from api_keys import ALPHA_VANTAGE_API_KEY as _CFG_AV
+                _repo_key = _CFG_AV
+            except Exception:
+                _repo_key = None
+        self._alpha_vantage_key = alpha_vantage_key or _env_key or _repo_key
+        self.data_fetcher = AdvancedDataFetcher(self._alpha_vantage_key, fred_api_key, data_mode=data_mode)
         self.models = {}
         self.scalers = {}
         self.feature_importance = {}
@@ -73,6 +95,41 @@ class AdvancedTradingAnalyzer:
         
         print(f"🚀 Optimizer: Using {self.max_workers} workers (CPU cores: {self.cpu_count})")
         print("🛡️ Data integrity validation: ENABLED (synthetic data blocked)")
+    
+    def _save_snapshot_manifest(self, hist_map: dict, symbols: list[str]):
+        """Save a lightweight per-run manifest with last date/close per symbol.
+        Stored under .cache/snapshots for fast, reproducible references.
+        """
+        try:
+            snapshots_dir = os.path.join(os.path.dirname(__file__), '.cache', 'snapshots')
+            os.makedirs(snapshots_dir, exist_ok=True)
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            path = os.path.join(snapshots_dir, f'manifest_{ts}.json')
+            manifest = {
+                'timestamp': ts,
+                'symbol_count': len(symbols),
+                'symbols': []
+            }
+            for s in symbols:
+                df = hist_map.get(s)
+                if isinstance(df, pd.DataFrame) and not df.empty and 'Close' in df.columns:
+                    try:
+                        manifest['symbols'].append({
+                            'symbol': s,
+                            'last_date': str(df.index[-1]),
+                            'last_close': float(df['Close'].iloc[-1]),
+                            'rows': int(len(df))
+                        })
+                    except Exception:
+                        manifest['symbols'].append({'symbol': s, 'last_date': None, 'last_close': None, 'rows': 0})
+                else:
+                    manifest['symbols'].append({'symbol': s, 'last_date': None, 'last_close': None, 'rows': 0})
+            import json
+            with open(path, 'w') as f:
+                json.dump(manifest, f)
+            print(f"📝 Snapshot manifest saved: {os.path.basename(path)} ({len(manifest['symbols'])} symbols)")
+        except Exception as e:
+            print(f"⚠️ Snapshot manifest save failed: {e}")
         
     def _validate_analysis_data(self, results):
         """Validate that analysis results use real market data"""
@@ -618,11 +675,55 @@ class AdvancedTradingAnalyzer:
                     print("Fallback large caps also failed to provide histories.")
                     return []
 
+            # Save a lightweight snapshot manifest (fast, reproducible)
+            try:
+                self._save_snapshot_manifest(hist_map, valid_symbols)
+            except Exception:
+                pass
+
+                # Optional: cross-source spot-check on a small random sample (free, low overhead)
+                try:
+                    sample_n = min(10, max(1, int(len(valid_symbols) * 0.03)))
+                    sample_syms = random.sample(valid_symbols, sample_n) if len(valid_symbols) >= sample_n else valid_symbols
+                    ok_count = 0
+                    for s in sample_syms:
+                        df_pre = hist_map.get(s)
+                        if isinstance(df_pre, pd.DataFrame) and not df_pre.empty:
+                            ok, diff = self.data_fetcher.spot_check_against_stooq(s, df_pre, pct_tolerance=0.02)
+                            if ok:
+                                ok_count += 1
+                    print(f"🧪 Spot-check consistency: {ok_count}/{len(sample_syms)} within 2% vs Stooq")
+                except Exception:
+                    pass
+
             # Compute internal breadth once per run using hist_map (zero-cost local compute)
             try:
                 self._breadth_context = self._compute_internal_breadth(hist_map, valid_symbols)
             except Exception:
                 self._breadth_context = {}
+
+            # Persist last-run metadata for downstream reporting (UI/Excel)
+            try:
+                skipped_symbols = [s for s in symbols if s not in valid_symbols]
+                self.last_run_meta = {
+                    'requested_symbols': list(symbols),
+                    'requested_count': len(symbols),
+                    'valid_symbols': list(valid_symbols),
+                    'valid_count': len(valid_symbols),
+                    'skipped_symbols': skipped_symbols,
+                    'skipped_count': len(skipped_symbols),
+                    'failures': getattr(self.data_fetcher, 'last_run_failures', []) or []
+                }
+            except Exception:
+                self.last_run_meta = {
+                    'requested_symbols': list(symbols),
+                    'requested_count': len(symbols),
+                    'valid_symbols': list(valid_symbols),
+                    'valid_count': len(valid_symbols),
+                    'skipped_symbols': [s for s in symbols if s not in valid_symbols],
+                    'skipped_count': len([s for s in symbols if s not in valid_symbols]),
+                    'failures': []
+                }
 
             results = []
             print(f"🚀 Starting optimized analysis of {len(valid_symbols)} stocks...")
@@ -1029,26 +1130,28 @@ class AdvancedTradingAnalyzer:
         features['institutional_confidence'] = institutional['institutional_confidence']
         features['hedge_fund_activity'] = institutional['hedge_fund_activity']
         
-        # Economic features
-        features['vix'] = economic['vix']
-        # Include expanded macro context if available
-        features['macro_spy_return_1d'] = economic.get('spy_return_1d', 0.0)
-        features['macro_spy_vol_20'] = economic.get('spy_vol_20', 0.0)
-        features['macro_usd_1d'] = economic.get('usd_change_1d', 0.0)
-        features['macro_gold_1d'] = economic.get('gold_change_1d', 0.0)
-        features['macro_oil_1d'] = economic.get('oil_change_1d', 0.0)
-        features['macro_yield_10y'] = economic.get('yield_10y', 0.0)
-        features['macro_yield_3m'] = economic.get('yield_3m', 0.0)
-        features['macro_yield_curve'] = economic.get('yield_curve_slope', 0.0)
-        features['macro_hyg_lqd_1d'] = economic.get('hyg_lqd_ratio_1d', 0.0)
-        features['macro_small_large_1d'] = economic.get('small_large_ratio_1d', 0.0)
-        features['macro_xly_xlp_1d'] = economic.get('xly_xlp_ratio_1d', 0.0)
-        features['macro_semis_spy_1d'] = economic.get('semis_spy_ratio_1d', 0.0)
-        # Static placeholders retained
-        features['fed_rate'] = economic['fed_rate']
-        features['gdp_growth'] = economic['gdp_growth']
-        features['inflation'] = economic['inflation']
-        features['unemployment'] = economic['unemployment']
+        # Economic features (only include when available to avoid synthetic data)
+        vix_val = economic.get('vix', None)
+        if vix_val is not None:
+            features['vix'] = vix_val
+        # Include expanded macro context if available (no defaults)
+        for k_src, k_dst in [
+            ('spy_return_1d', 'macro_spy_return_1d'),
+            ('spy_vol_20', 'macro_spy_vol_20'),
+            ('usd_change_1d', 'macro_usd_1d'),
+            ('gold_change_1d', 'macro_gold_1d'),
+            ('oil_change_1d', 'macro_oil_1d'),
+            ('yield_10y', 'macro_yield_10y'),
+            ('yield_3m', 'macro_yield_3m'),
+            ('yield_curve_slope', 'macro_yield_curve'),
+            ('hyg_lqd_ratio_1d', 'macro_hyg_lqd_1d'),
+            ('small_large_ratio_1d', 'macro_small_large_1d'),
+            ('xly_xlp_ratio_1d', 'macro_xly_xlp_1d'),
+            ('semis_spy_ratio_1d', 'macro_semis_spy_1d'),
+        ]:
+            val = economic.get(k_src, None)
+            if val is not None:
+                features[k_dst] = val
 
         # Internal breadth features (computed once per run)
         bc = getattr(self, '_breadth_context', {}) or {}
@@ -1249,22 +1352,25 @@ class AdvancedTradingAnalyzer:
             # Risk assessment
             volatility = df['Volatility_20'].iloc[-1] if not pd.isna(df['Volatility_20'].iloc[-1]) else 0.02
             beta = info.get('beta', 1.0) if info.get('beta') else 1.0
-            vix = economic['vix']
+            vix = economic.get('vix', None)
             
             risk_score = 0
-            if volatility > 0.05 or beta > 2.0 or vix > 30:
+            if vix is not None and (volatility > 0.05 or beta > 2.0 or vix > 30):
                 risk_score = 100
-            elif volatility > 0.03 or beta > 1.5 or vix > 25:
+            elif vix is not None and (volatility > 0.03 or beta > 1.5 or vix > 25):
                 risk_score = 70
-            elif volatility > 0.02 or beta > 1.2 or vix > 20:
+            elif vix is not None and (volatility > 0.02 or beta > 1.2 or vix > 20):
                 risk_score = 40
             else:
                 risk_score = 20
             
             risk_level = 'High' if risk_score > 70 else 'Medium' if risk_score > 40 else 'Low'
             
-            # Market conditions
-            market_condition = 'Bullish' if vix < 20 and economic['gdp_growth'] > 2 else 'Bearish' if vix > 30 else 'Neutral'
+            # Market conditions (use VIX only if available; no GDP placeholder)
+            if vix is None:
+                market_condition = 'Neutral'
+            else:
+                market_condition = 'Bullish' if vix < 20 else 'Bearish' if vix > 30 else 'Neutral'
             
             # Sector analysis
             sector_name = info.get('sector', 'Unknown')
@@ -1577,17 +1683,19 @@ class AdvancedTradingAnalyzer:
             return 50
 
     def _calculate_market_overlay_score(self, economic: dict, breadth: dict) -> float:
-        """Combine macro (one-shot) and internal breadth into a 0-100 overlay score."""
+        """Combine macro (one-shot) and internal breadth into a 0-100 overlay score.
+        Only use macro adjustments when real data is available; otherwise rely on breadth.
+        """
         try:
             # Base neutral score
             score = 50.0
-            vix = float(economic.get('vix', 20.0))
-            yield_curve = float(economic.get('yield_curve_slope', 0.0))
-            usd = float(economic.get('usd_change_1d', 0.0))
-            oil = float(economic.get('oil_change_1d', 0.0))
-            xly_xlp = float(economic.get('xly_xlp_ratio_1d', 0.0))
-            semis = float(economic.get('semis_spy_ratio_1d', 0.0))
-            hyg_lqd = float(economic.get('hyg_lqd_ratio_1d', 0.0))
+            vix_val = economic.get('vix', None)
+            yield_curve = economic.get('yield_curve_slope', None)
+            usd = economic.get('usd_change_1d', None)
+            oil = economic.get('oil_change_1d', None)
+            xly_xlp = economic.get('xly_xlp_ratio_1d', None)
+            semis = economic.get('semis_spy_ratio_1d', None)
+            hyg_lqd = economic.get('hyg_lqd_ratio_1d', None)
 
             # Breadth
             adv_pct = float(breadth.get('adv_pct_1d', 0.5))  # 0..1
@@ -1595,24 +1703,32 @@ class AdvancedTradingAnalyzer:
             pct200 = float(breadth.get('pct_above_sma200', 0.5))
             nh_nl = float(breadth.get('nh_nl_ratio_20d', 1.0))  # >1 bullish
 
-            # Macro influences (heuristic)
-            # Lower VIX is bullish, high VIX is bearish
-            if vix < 18:
-                score += 5
-            elif vix > 28:
-                score -= 7
-
-            # Positive yield curve slope bullish, inverted bearish
-            score += max(-10, min(10, yield_curve * 50))  # ~ +/-10 pts
-
-            # Cyclical vs defensive
-            score += max(-5, min(5, xly_xlp * 100))
-
-            # Semis leadership as tech risk-on proxy
-            score += max(-5, min(5, semis * 100))
-
-            # Credit risk appetite
-            score += max(-5, min(5, hyg_lqd * 100))
+            # Macro influences (heuristic) - only if available
+            if vix_val is not None:
+                if float(vix_val) < 18:
+                    score += 5
+                elif float(vix_val) > 28:
+                    score -= 7
+            if yield_curve is not None:
+                try:
+                    score += max(-10, min(10, float(yield_curve) * 50))
+                except Exception:
+                    pass
+            if xly_xlp is not None:
+                try:
+                    score += max(-5, min(5, float(xly_xlp) * 100))
+                except Exception:
+                    pass
+            if semis is not None:
+                try:
+                    score += max(-5, min(5, float(semis) * 100))
+                except Exception:
+                    pass
+            if hyg_lqd is not None:
+                try:
+                    score += max(-5, min(5, float(hyg_lqd) * 100))
+                except Exception:
+                    pass
 
             # Breadth influences
             score += (adv_pct - 0.5) * 30  # +/-15

@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import logging
+from io import BytesIO
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -215,74 +216,105 @@ if analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)":
     ⚠️ Other parameters below are ignored when using Ultimate Strategy.
     """)
 
+# Determine if Ultimate Strategy is selected to simplify sidebar
+is_ultimate = (analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)")
+
 # Toggle ML training (optional: longer run, potentially higher accuracy)
-enable_ml_training = st.sidebar.checkbox("Enable ML Training (longer, more accurate)", value=False)
-analyzer.enable_training = bool(enable_ml_training)
+if not is_ultimate:
+    enable_ml_training = st.sidebar.checkbox("Enable ML Training (longer, more accurate)", value=False)
+    analyzer.enable_training = bool(enable_ml_training)
+else:
+    # Ultimate Strategy manages ML usage internally; hide this control
+    analyzer.enable_training = False
 
-# Dynamic stock count slider based on universe size
-max_available = len(analyzer.stock_universe)  # 779 stocks
-default_count = max_available  # Default to full universe for best coverage
-num_stocks = st.sidebar.slider(
-    "Number of Stocks", 
-    20, 
-    max_available, 
-    default_count,
-    help=f"💡 Recommended: Use {max_available} (full universe) for maximum opportunity capture"
-)
+# Dynamic stock count slider based on universe size (hide for Ultimate Strategy)
+if not is_ultimate:
+    max_available = len(analyzer.stock_universe)
+    default_count = max_available
+    num_stocks = st.sidebar.slider(
+        "Number of Stocks", 
+        20, 
+        max_available, 
+        default_count,
+        help=f"💡 Recommended: Use {max_available} (full universe) for maximum opportunity capture"
+    )
+    
+    # Show recommendation for full universe
+    if num_stocks == max_available:
+        st.sidebar.success(f"✅ Using full universe ({max_available} stocks) - Maximum coverage!")
+    elif num_stocks < 500:
+        st.sidebar.warning(f"⚠️ Using {num_stocks} stocks. Consider using {max_available} for better opportunities.")
 
-# Show recommendation for full universe
-if num_stocks == max_available:
-    st.sidebar.success(f"✅ Using full universe ({max_available} stocks) - Maximum coverage!")
-elif num_stocks < 500:
-    st.sidebar.warning(f"⚠️ Using {num_stocks} stocks. Consider using {max_available} for better opportunities.")
+# Cap filter and risk style (not needed for Ultimate Strategy)
+if not is_ultimate:
+    cap_filter = st.sidebar.selectbox(
+        "Cap Filter",
+        ["All", "Large Cap", "Mid Cap", "Small Cap"],
+        help="💡 Recommended: 'All' for comprehensive analysis"
+    )
+    
+    risk_style = st.sidebar.selectbox(
+        "Risk Style",
+        ["Low Risk", "Balanced", "High Risk"]
+    )
 
-# Cap filter and risk style
-cap_filter = st.sidebar.selectbox(
-    "Cap Filter",
-    ["All", "Large Cap", "Mid Cap", "Small Cap"],
-    help="💡 Recommended: 'All' for comprehensive analysis"
-)
+"""
+Hide guardrail controls for Ultimate Strategy. The Ultimate Strategy pipeline already
+enforces penny/micro-cap removal and safety guardrails internally.
+"""
+if not is_ultimate:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 🛡️ Risk Guardrails")
+    enable_guardrails = st.sidebar.checkbox("Enable Catastrophic-Loss Guard", value=True,
+        help="Filters out high-risk picks: penny stocks, extreme daily gaps, very low liquidity, and high-volatility biotech.")
+    min_price_guard = st.sidebar.number_input("Minimum Price ($)", min_value=0.0, value=5.0, step=0.5,
+        help="Exclude very low-priced names which tend to have outsized gap risk.")
+    min_volume_guard = st.sidebar.number_input("Minimum Daily Volume", min_value=0, value=300_000, step=50_000,
+        help="Exclude illiquid names that can move 20%+ on news.")
+    max_abs_change_guard = st.sidebar.number_input("Max |1D Change| (%)", min_value=0.0, value=15.0, step=1.0,
+        help="If today's move is already extreme, skip to avoid chasing big gaps.")
+    exclude_biotech_guard = st.sidebar.checkbox("Exclude High-Volatility Biotech", value=True,
+        help="Biotech/clinical-trial names have frequent 30-60% gap risks.")
 
-risk_style = st.sidebar.selectbox(
-    "Risk Style",
-    ["Low Risk", "Balanced", "High Risk"]
-)
+if not is_ultimate:
+    market_focus = st.sidebar.selectbox(
+        "Market Focus",
+        ["All Markets", "S&P 500 Large Cap", "NASDAQ Growth", "Russell 2000 Small Cap", 
+         "Sector Rotation", "Momentum Stocks", "Value Stocks", "Dividend Aristocrats"],
+        help="💡 Recommended: 'All Markets' for comprehensive coverage"
+    )
 
-market_focus = st.sidebar.selectbox(
-    "Market Focus",
-    ["All Markets", "S&P 500 Large Cap", "NASDAQ Growth", "Russell 2000 Small Cap", 
-     "Sector Rotation", "Momentum Stocks", "Value Stocks", "Dividend Aristocrats"],
-    help="💡 Recommended: 'All Markets' for comprehensive coverage"
-)
+if not is_ultimate:
+    # Legacy controls (kept for layout, not used in light mode)
+    risk_model = st.sidebar.selectbox(
+        "Risk Model",
+        ["Conservative (Low Beta)", "Balanced (Market Beta)", "Aggressive (High Beta)", "Momentum (High Volatility)"]
+    )
 
-# Legacy controls (kept for layout, not used in light mode)
-risk_model = st.sidebar.selectbox(
-    "Risk Model",
-    ["Conservative (Low Beta)", "Balanced (Market Beta)", "Aggressive (High Beta)", "Momentum (High Volatility)"]
-)
-
-# Professional features toggle
-show_real_time = st.sidebar.checkbox("Real-Time Pricing", value=True)
-show_analyst_targets = st.sidebar.checkbox("Analyst Price Targets", value=True)
-show_earnings_impact = st.sidebar.checkbox("Earnings Impact Analysis", value=True)
-show_institutional_flow = st.sidebar.checkbox("Institutional Flow", value=True)
+if not is_ultimate:
+    # Professional features toggle
+    show_real_time = st.sidebar.checkbox("Real-Time Pricing", value=True)
+    show_analyst_targets = st.sidebar.checkbox("Analyst Price Targets", value=True)
+    show_earnings_impact = st.sidebar.checkbox("Earnings Impact Analysis", value=True)
+    show_institutional_flow = st.sidebar.checkbox("Institutional Flow", value=True)
 
 # Stock selection consistency controls
-st.sidebar.markdown("---")
-st.sidebar.markdown("## 🔄 Stock Selection")
-
-if st.session_state.selected_symbols:
-    st.sidebar.success(f"✅ {len(st.session_state.selected_symbols)} stocks selected")
-    st.sidebar.write(f"**Parameters:** {st.session_state.last_selection_params}")
+if not is_ultimate:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 🔄 Stock Selection")
     
-    if st.sidebar.button("🔄 Select New Stocks"):
-        st.session_state.selected_symbols = None
-        st.session_state.last_selection_params = None
-        st.rerun()
-else:
-    st.sidebar.info("No stocks selected yet")
-
-st.sidebar.markdown("---")
+    if st.session_state.selected_symbols:
+        st.sidebar.success(f"✅ {len(st.session_state.selected_symbols)} stocks selected")
+        st.sidebar.write(f"**Parameters:** {st.session_state.last_selection_params}")
+        
+        if st.sidebar.button("🔄 Select New Stocks"):
+            st.session_state.selected_symbols = None
+            st.session_state.last_selection_params = None
+            st.rerun()
+    else:
+        st.sidebar.info("No stocks selected yet")
+    
+    st.sidebar.markdown("---")
 
 # Enhanced stock selection with Market Focus integration
 def get_comprehensive_symbol_selection(analyzer, cap_filter: str, market_focus: str, count: int):
@@ -485,6 +517,52 @@ def filter_by_risk(results, risk_style: str):
         return [r for r in results if r.get('risk_level') in ("High", "Medium")]
     return results
 
+def apply_guardrails(results,
+                     enable: bool,
+                     min_price: float,
+                     min_volume: int,
+                     max_abs_change_pct: float,
+                     exclude_biotech: bool):
+    """Apply catastrophic-loss guardrails and return (kept, removed_with_reason)."""
+    if not enable or not results:
+        return results, []
+
+    removed = []
+    kept = []
+    biotech_keywords = {"biotech", "biotechnology", "life sciences", "genomics", "pharma", "pharmaceutical"}
+
+    for r in results:
+        reasons = []
+        price = float(r.get('current_price', 0) or 0)
+        vol = int(r.get('volume', 0) or 0)
+        change1d = float(r.get('price_change_1d', 0) or 0)
+        sector = (r.get('sector') or "").lower()
+        vol_score = float(r.get('volatility_score', 50) or 50)
+        risk_level = r.get('risk_level')
+
+        # Penny/low price
+        if price > 0 and price < min_price:
+            reasons.append(f"Price ${price:.2f} < ${min_price:.2f}")
+        # Liquidity
+        if vol < min_volume:
+            reasons.append(f"Volume {vol:,} < {min_volume:,}")
+        # Big gap day
+        if abs(change1d) >= max_abs_change_pct:
+            reasons.append(f"|1D| move {change1d:+.1f}% ≥ {max_abs_change_pct:.0f}%")
+        # High-volatility biotech
+        if exclude_biotech and any(k in sector for k in biotech_keywords) and (risk_level == 'High' or vol_score >= 70):
+            reasons.append("Biotech high-volatility")
+
+        if reasons:
+            removed.append({
+                'symbol': r.get('symbol'),
+                'reasons': ", ".join(reasons)
+            })
+        else:
+            kept.append(r)
+
+    return kept, removed
+
 if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
     
     # Check if Ultimate Strategy is selected
@@ -623,11 +701,28 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
         
         # Post-filter by risk style for display
         results = filter_by_risk(results, risk_style)
+
+        # Apply catastrophic-loss guardrails
+        results, removed_flags = apply_guardrails(
+            results,
+            enable=enable_guardrails,
+            min_price=min_price_guard,
+            min_volume=int(min_volume_guard),
+            max_abs_change_pct=max_abs_change_guard,
+            exclude_biotech=exclude_biotech_guard,
+        )
         
         progress_bar.empty()
         status_text.empty()
     
     if results and len(results) > 0:
+        # Show guardrail effect if applied
+        if enable_guardrails:
+            removed_count = len(removed_flags)
+            if removed_count:
+                with st.expander(f"🛡️ Guardrails removed {removed_count} high-risk picks (click to view)"):
+                    removed_df = pd.DataFrame(removed_flags)
+                    st.dataframe(removed_df, use_container_width=True)
         
         # Professional Dashboard Layout
         st.markdown("## 🏛️ Professional Analysis Dashboard")
@@ -871,7 +966,7 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
         # Professional Analysis Table
         st.markdown("### 📊 Complete Professional Analysis")
         
-        # Create professional DataFrame
+    # Create professional DataFrame
         df_results = pd.DataFrame(results)
         
         # Add professional columns with timeframe information
@@ -932,6 +1027,74 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
             return ''
         
         st.dataframe(df_display.style.applymap(color_cells), use_container_width=True)
+
+        # ========= Excel Export (with raw numeric values) =========
+        st.markdown("### 📥 Download Results")
+
+        def build_export_dataframe(rows: list[dict]) -> pd.DataFrame:
+            export_rows = []
+            for r in rows:
+                export_rows.append({
+                    'symbol': r.get('symbol'),
+                    'current_price': r.get('current_price'),
+                    'price_change_1d_pct': r.get('price_change_1d'),
+                    'prediction_pct': r.get('prediction'),
+                    'confidence': r.get('confidence'),
+                    'recommendation': r.get('recommendation'),
+                    'risk_level': r.get('risk_level'),
+                    'overall_score': r.get('overall_score'),
+                    'technical_score': r.get('technical_score'),
+                    'fundamental_score': r.get('fundamental_score'),
+                    'sentiment_score': r.get('sentiment_score'),
+                    'momentum_score': r.get('momentum_score'),
+                    'volume_score': r.get('volume_score'),
+                    'volatility_score': r.get('volatility_score'),
+                    'volume': r.get('volume'),
+                    'market_cap': r.get('market_cap'),
+                    'sector': r.get('sector'),
+                    'upside_potential_pct': r.get('upside_potential', r.get('prediction')),
+                    'adjusted_upside_pct': r.get('adjusted_upside'),
+                    'stop_loss_price': r.get('stop_loss_price', r.get('current_price', 0) * 0.95 if r.get('current_price') else None),
+                    'target_price': r.get('technical_target', r.get('current_price')),
+                    'earnings_quality': r.get('earnings_quality'),
+                    'analysis_focus': r.get('analysis_focus', analysis_type),
+                    'market_regime': r.get('market_regime'),
+                    'last_updated': r.get('last_updated')
+                })
+            return pd.DataFrame(export_rows)
+
+        def to_excel_bytes(df: pd.DataFrame, sheet_name: str = 'Results') -> bytes | None:
+            bio = BytesIO()
+            try:
+                with pd.ExcelWriter(bio, engine='openpyxl') as writer:
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                bio.seek(0)
+                return bio.read()
+            except Exception:
+                return None
+
+        df_export = build_export_dataframe(results)
+        excel_bytes = to_excel_bytes(df_export)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        file_label = f"Professional_Analysis_{timestamp}.xlsx"
+
+        if excel_bytes:
+            st.download_button(
+                label="⬇️ Download Excel (clean numeric)",
+                data=excel_bytes,
+                file_name=file_label,
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+        else:
+            # Fallback to CSV if openpyxl not available
+            st.warning("Excel engine not available. Offering CSV instead.")
+            csv_bytes = df_export.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="⬇️ Download CSV (clean numeric)",
+                data=csv_bytes,
+                file_name=file_label.replace('.xlsx', '.csv'),
+                mime='text/csv'
+            )
         
         # Professional Charts
         st.markdown("### 📈 Professional Analysis Charts")
@@ -985,7 +1148,7 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
                 **{pick['symbol']}** - {pick['recommendation']} 
                 - **Entry:** ${pick['current_price']:.2f}
                 - **Target:** ${pick['current_price'] * (1 + pick['prediction']/100):.2f} ({pick['prediction']:+.1f}%)
-                - **Stop Loss:** ${pick['current_price'] * 0.95:.2f} (-5%)
+                - **Stop Loss:** ${pick.get('stop_loss_price', pick['current_price'] * 0.95):.2f} (~-5%)
                 - **Position Size:** {'Large' if pick['risk_level'] == 'Low' else 'Medium' if pick['risk_level'] == 'Medium' else 'Small'}
                 - **Time Horizon:** {'Long-term' if pick['confidence'] > 0.9 else 'Medium-term'}
                 """)
@@ -1011,10 +1174,11 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
     else:
         st.error("No analysis results available. Please check your settings and try again.")
 
-# Live market data disabled to avoid external rate limits in large-scale free runs
-st.sidebar.markdown("---")
-st.sidebar.markdown("## 📊 Live Market Data")
-st.sidebar.info("Disabled in Light Mode for scale and reliability.")
+# Live market data notice (hide for Ultimate Strategy to keep UI minimal)
+if not is_ultimate:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 📊 Live Market Data")
+    st.sidebar.info("Disabled in Light Mode for scale and reliability.")
 
 # Professional footer
 st.markdown("---")
