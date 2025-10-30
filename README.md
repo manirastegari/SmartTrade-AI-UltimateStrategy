@@ -1,4 +1,4 @@
-# 🚀 SmartTrade AI Ultimate Strategy - V5.0 IMPROVED
+# 🚀 SmartTrade AI Ultimate Strategy + AI — V5.0
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Latest-red)](https://streamlit.io)
@@ -6,7 +6,7 @@
 [![Version](https://img.shields.io/badge/Version-5.0-orange)](.)
 [![TFSA](https://img.shields.io/badge/TFSA-100%25-green)](https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/tax-free-savings-account.html)
 [![Questrade](https://img.shields.io/badge/Questrade-Ready-blue)](https://www.questrade.com/)
-[![Runtime](https://img.shields.io/badge/Runtime-10--15min-success)]()
+[![Runtime](https://img.shields.io/badge/Runtime-45–60min%20(Ultimate%20%2B%20AI)%20%E2%80%A2%2010–15min%20(Light)-success)]()
 [![Accuracy](https://img.shields.io/badge/Accuracy-75--80%25-brightgreen)]()
 
 **Created by: Mani Rastegari**  
@@ -14,11 +14,17 @@
 
 ## 🎯 **What's New in Version 5.0 (October 2025)**
 
-**75-80% accurate, 3-4x faster, 2800x faster on cached runs! Institutional-grade for FREE!**
+**75-80% accurate, AI-enhanced, 3-4x faster, 2800x faster on cached runs! Institutional-grade for FREE!**
 
-### **🚀 V5.0 MAJOR IMPROVEMENTS (9 Enhancements)**
+### 🧠 New: Ultimate Strategy + AI (xAI Grok)
+- Post-run professional AI review using xAI Grok
+- Covers Tier 1/2/3 picks, market stance, timeframe, and risks
+- Lightweight News + SEC context (Google News RSS + EDGAR Atom)
+- Model defaults to grok-4-fast-reasoning with automatic fallback
+
+### **🚀 V5.0 MAJOR IMPROVEMENTS**
 - **🎯 75-80% Accuracy**: Up from 60-65% - now rivals $10k+/month services!
-- **⚡ 3-4x Faster**: 10-15 minutes (was 45 min) - optimized batch fetching
+- **⚡ 3-4x Faster**: Light run 10–15 minutes (Ultimate Strategy + AI: 45–60 minutes)
 - **💾 Smart Caching**: 2800x faster on repeat runs (4-hour intelligent cache)
 - **🧠 Fixed ML**: Removed randomness - deterministic predictions (+25% accuracy)
 - **📊 30+ Fundamentals**: PE, ROE, FCF, dividends, margins (was ~5 metrics)
@@ -47,15 +53,16 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 - **Risk Assessment** - Evaluates risk levels for each stock
 - **Professional Dashboard** - Interactive charts and comprehensive metrics
 
-### 📊 **Ultimate Strategy Coverage (V4.0)**
+### 📊 **Ultimate Strategy + AI Coverage (V5.0)**
 - **737 Validated Stocks** - 100% success rate, all failed symbols removed
 - **4-Strategy Consensus** - Institutional, Hedge Fund, Quant Value, Risk Managed
 - **🇨🇦 TFSA Perfection** - 100% Canadian tax-free account compatible
 - **🎯 Questrade Ready** - All stocks available on Canada's top platform
 - **Optimized Universe** - Removed 42 delisted/unavailable stocks for reliability
 - **100% Success Rate** - Zero data failures, institutional-grade accuracy
-- **💾 Auto Excel Export** - Professional reporting with GitHub push
+- **💾 Auto Excel Export** - Professional reporting with AI sheets
 - **⏰ Automated Daily Runs** - 4:30 AM ET analysis, results before market open
+- **🤖 AI Overlay** - xAI Grok post-run review in UI and Excel
 
 ### 💰 **Cost: $0/month**
 - Uses only free APIs (Yahoo Finance, Google News)
@@ -66,7 +73,7 @@ A comprehensive, AI-powered trading analysis platform that provides real-time st
 
 ## ⚡ Quick Start (TL;DR)
 
-### **🚀 V4.0 Ultimate Strategy (Recommended)**
+### **🚀 Ultimate Strategy + AI (Recommended)**
 ```bash
 git clone https://github.com/manirastegari/SmartTrade-AI-UltimateStrategy.git
 cd SmartTrade-AI-UltimateStrategy
@@ -74,10 +81,10 @@ pip install -r requirements.txt
 streamlit run professional_trading_app.py --server.port 8502
 ```
 
-### **🎯 V4.0 Key Features**
+### **🎯 V5.0 Key Features**
 - **737-Stock Universe**: 100% success rate, all validated and tradeable
-- **⚡ 10x Faster**: 45 minutes (was 8+ hours)
-- **🏆 Ultimate Strategy**: 4-strategy consensus for highest confidence
+- **⚡ Faster**: Ultimate Strategy + AI: 45–60 minutes end-to-end (light run: 10–15 min)
+- **🏆 Ultimate Strategy + AI**: 4-strategy consensus with AI post-run review
 - **🎯 50% Stricter**: 82+ score for STRONG BUY (higher quality picks)
 - **⏰ Auto Scheduler**: Daily 4:30 AM analysis before market open
 - **💾 Auto Export**: Excel + GitHub push automatically
@@ -90,16 +97,38 @@ Open `http://localhost:8502` in your browser.
 
 ## 🧭 How to Use
 
-### **V4.0 Ultimate Strategy:**
-1. **Select Analysis Type**: Choose "🏆 Ultimate Strategy (4-Strategy Consensus)"
-2. **Run Analysis**: Click "🚀 Run Professional Analysis" (~45 minutes)
+### **Ultimate Strategy + AI:**
+1. **Select Analysis Type**: Choose "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)"
+2. **Run Analysis**: Click "🚀 Run Professional Analysis" (~45–60 minutes)
 3. **Review 4 Tiers**:
    - **Tier 1 (4/4)**: All 4 strategies agree - LOWEST RISK (~10 stocks)
    - **Tier 2 (3/4)**: 3 strategies agree - LOW RISK (~5-10 stocks)
    - **Tier 3 (2/4)**: 2 strategies agree - MEDIUM RISK (~10-15 stocks)
    - **Tier 4 (1/4)**: 1 strategy recommends - HIGHER RISK (~10+ stocks)
 4. **Auto Excel Export**: Results automatically saved to `exports/` folder
-5. **Trade on Questrade**: All 737 stocks available for immediate trading
+5. **AI Review**: See the AI market stance, timeframe, and Tier 1/2/3 picks in UI/Excel
+6. **Trade on Questrade**: All 737 stocks available for immediate trading
+
+### 🔐 Configure API Keys (Public-Safe)
+- The app runs fully on free data; AI is optional but recommended
+- Keys are NOT stored in the repo: `.env` and `api_keys.py` are ignored by `.gitignore`
+- Recommended: set environment variables in your shell (zsh)
+
+```bash
+# xAI Grok (recommended)
+export XAI_API_KEY="your_xai_key"
+# Optional: override model (defaults to grok-4-fast-reasoning)
+export XAI_MODEL="grok-4-fast-reasoning"
+
+# Optional free API keys used in fallbacks (safe defaults exist)
+export ALPHA_VANTAGE_API_KEY="your_alpha_vantage_key"
+export FINNHUB_API_KEY="your_finnhub_key"
+export IEX_CLOUD_API_KEY="your_iex_key"
+export POLYGON_API_KEY="your_polygon_key"
+export TWELVE_DATA_API_KEY="your_twelve_data_key"
+```
+
+Alternatively, copy `.env.example` to `.env` and fill in values (the `.env` file is ignored from git).
 
 ### **Automated Daily Runs:**
 - Scheduler runs at **4:30 AM ET** every weekday
@@ -263,6 +292,10 @@ Position Size: 3% of portfolio
 
 ## 🔧 Technical Details
 
+### Security
+- `api_keys.py` and `.env` are ignored by git and safe for a public repository
+- Do not commit real keys. If a key is ever exposed, rotate it immediately with your provider
+
 ### Dependencies
 - **Streamlit** - Web interface
 - **Pandas** - Data manipulation
@@ -374,7 +407,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Mani Rastegari**  
 Email: mani.rastegari@gmail.com  
-GitHub: [@yourusername](https://github.com/yourusername)
+GitHub: [@manirastegari](https://github.com/manirastegari)
 
 ---
 

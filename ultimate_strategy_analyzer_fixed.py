@@ -139,6 +139,19 @@ class FixedUltimateStrategyAnalyzer:
         except Exception as _:
             final_recommendations['alpha_plus_portfolio'] = {'picks': [], 'summary': {}}
 
+        # AI Review: Use xAI Grok to perform post-run professional review before export
+        try:
+            if progress_callback:
+                progress_callback("🤖 Generating AI post-run review (xAI Grok)...", 95)
+            ai_review = self._run_ai_review(
+                final_recommendations.get('consensus_recommendations', []),
+                market_analysis,
+                sector_analysis
+            )
+            final_recommendations['ai_review'] = ai_review
+        except Exception as _:
+            final_recommendations['ai_review'] = {"enabled": False, "reason": "AI review failed unexpectedly"}
+
         if progress_callback:
             progress_callback("FIXED Ultimate Strategy Analysis Complete!", 100)
         
@@ -706,6 +719,78 @@ class FixedUltimateStrategyAnalyzer:
             'stocks_1_of_4': 0,
             'analysis_type': 'FIXED_OPTIMIZED_CONSENSUS'
         }
+
+    def _run_ai_review(self, consensus_recs: List[Dict], market_analysis: Dict, sector_analysis: Dict) -> Dict:
+        """Invoke xAI Grok to produce a professional post-run review.
+
+        This function is resilient: if xAI is not configured or the request fails,
+        it returns a lightweight disabled payload so the rest of the pipeline continues.
+        """
+        try:
+            from xai_client import XAIClient  # local module
+        except Exception:
+            return {"enabled": False, "reason": "xai_client not available"}
+
+        try:
+            client = XAIClient()
+            if not client.is_configured():
+                return {"enabled": False, "reason": "XAI_API_KEY not configured"}
+            # Build tiered groups for richer AI context
+            try:
+                tier1 = [r for r in consensus_recs if r.get('strategies_agreeing') == 4]
+                tier2 = [r for r in consensus_recs if r.get('strategies_agreeing') == 3]
+                tier3 = [r for r in consensus_recs if r.get('strategies_agreeing') == 2]
+            except Exception:
+                tier1, tier2, tier3 = [], [], []
+
+            alpha_plus_picks = []
+            try:
+                ap = getattr(self, 'last_ai_alpha_plus_cache', None)
+                # Prefer the freshly built alpha_plus in results if available; fallback to cache notion
+                # We'll pass empty if not available (xAI handles gracefully)
+            except Exception:
+                ap = None
+            # Extract alpha_plus from self if already set in last call context; else empty list
+            try:
+                # When called within run_ultimate_strategy, we have the portfolio in scope there; here we just pass empty
+                alpha_plus_picks = []
+            except Exception:
+                alpha_plus_picks = []
+
+            # Prepare compact News+SEC context for a small subset (Tier1 first, then Tier2)
+            market_news_summary = []
+            symbol_news = {}
+            sec_filings_summary = {}
+            try:
+                from news_sec_fetcher import build_compact_context_for_ai
+                # Select up to 15 symbols for context (prioritize Tier1, then Tier2)
+                selected_syms = [r.get('symbol') for r in (tier1[:10] + tier2[:5]) if r.get('symbol')]
+                if selected_syms:
+                    ctx = build_compact_context_for_ai(selected_syms)
+                    market_news_summary = ctx.get('market_news_summary') or []
+                    symbol_news = ctx.get('symbol_news') or {}
+                    sec_filings_summary = ctx.get('sec_filings_summary') or {}
+            except Exception:
+                # News/SEC context is optional; fail silently if any issues
+                pass
+
+            return client.analyze_ultimate_strategy(
+                consensus_recs=consensus_recs,
+                market_analysis=market_analysis,
+                sector_analysis=sector_analysis,
+                top_n=40,
+                tiers={
+                    'tier1': tier1,
+                    'tier2': tier2,
+                    'tier3': tier3,
+                    'alpha_plus': alpha_plus_picks
+                },
+                market_news_summary=market_news_summary,
+                symbol_news=symbol_news,
+                sec_filings_summary=sec_filings_summary,
+            )
+        except Exception as e:
+            return {"enabled": False, "reason": f"xAI error: {e}"}
     
     def _auto_export_to_excel(self, results: Dict):
         """Export results to Excel with timestamp and push to GitHub"""
@@ -874,6 +959,52 @@ class FixedUltimateStrategyAnalyzer:
                     tier2_df = pd.DataFrame(tier2_data)
                     tier2_df.to_excel(writer, sheet_name='Tier3_2of4_Agreement', index=False)
 
+                # Sheet 8: AI Review (summary style)
+                ai_review = results.get('ai_review') or {}
+                if ai_review and ai_review.get('enabled'):
+                    review_rows = []
+                    model_used = ai_review.get('model') or ai_review.get('model_used')
+                    summary = ai_review.get('summary')
+                    market_assessment = ai_review.get('market_assessment')
+                    timeframe_guidance = ai_review.get('timeframe_guidance')
+                    fundamentals_review = ai_review.get('fundamentals_review')
+                    technical_review = ai_review.get('technical_review')
+                    if model_used:
+                        review_rows.append({'Section': 'Model', 'Analysis': model_used})
+                    for key, val in [
+                        ('Summary', summary),
+                        ('Market Assessment', market_assessment),
+                        ('Timeframe Guidance', timeframe_guidance),
+                        ('Fundamentals Review', fundamentals_review),
+                        ('Technical Review', technical_review),
+                    ]:
+                        if val:
+                            review_rows.append({'Section': key, 'Analysis': str(val)})
+                    if review_rows:
+                        pd.DataFrame(review_rows).to_excel(writer, sheet_name='AI_Review', index=False)
+
+                    # Sheet 9: AI Picks (structured)
+                    ai_picks = ai_review.get('ai_picks') or []
+                    if isinstance(ai_picks, list) and ai_picks:
+                        # Normalize into columns
+                        norm_rows = []
+                        for p in ai_picks:
+                            norm_rows.append({
+                                'Symbol': p.get('symbol'),
+                                'Timeframe': p.get('timeframe'),
+                                'Risk': p.get('risk'),
+                                'Reward': p.get('reward'),
+                                'Confidence': p.get('confidence'),
+                                'Rationale': p.get('rationale') or p.get('notes'),
+                            })
+                        pd.DataFrame(norm_rows).to_excel(writer, sheet_name='AI_Picks', index=False)
+                else:
+                    # Even if disabled, log the reason for transparency
+                    if ai_review and ai_review.get('reason'):
+                        pd.DataFrame([{'Status': 'AI disabled', 'Reason': ai_review.get('reason')}]).to_excel(
+                            writer, sheet_name='AI_Review', index=False
+                        )
+
                 # Sheet 6: Alpha+ Profit-Optimized Portfolio
                 alpha_plus = results.get('alpha_plus_portfolio') or {}
                 alpha_rows = (alpha_plus.get('picks') or [])
@@ -978,6 +1109,49 @@ class FixedUltimateStrategyAnalyzer:
         st.markdown("### 📊 Consensus Summary")
         col0, col1, col2 = st.columns(3)
         requested_universe = recommendations.get('requested_universe_count', recommendations.get('total_stocks_analyzed', 0))
+        
+        # AI Review section (non-intrusive, above summary details)
+        ai_review = recommendations.get('ai_review') or {}
+        if ai_review:
+            if ai_review.get('enabled'):
+                # Brief, understandable headline summary card
+                headline = ai_review.get('market_assessment') or ''
+                tf = ai_review.get('timeframe_guidance') or ''
+                if headline or tf:
+                    st.info(f"🤖 AI view: {headline} | Timeframes: {tf}")
+                with st.expander("🤖 AI Post-Run Review (xAI Grok)"):
+                    if ai_review.get('model') or ai_review.get('model_used'):
+                        st.caption(f"Model: {ai_review.get('model') or ai_review.get('model_used')}")
+                    # Show market view and timeframes
+                    if ai_review.get('market_assessment'):
+                        st.markdown("#### Market assessment")
+                        st.write(ai_review.get('market_assessment'))
+                    if ai_review.get('timeframe_guidance'):
+                        st.markdown("#### Timeframe guidance")
+                        st.write(ai_review.get('timeframe_guidance'))
+                    if ai_review.get('summary'):
+                        st.markdown("#### Summary")
+                        st.write(ai_review.get('summary'))
+                    # AI picks table
+                    ai_picks = ai_review.get('ai_picks') or []
+                    if isinstance(ai_picks, list) and ai_picks:
+                        import pandas as _pd
+                        df = _pd.DataFrame([
+                            {
+                                'Symbol': p.get('symbol'),
+                                'Timeframe': p.get('timeframe'),
+                                'Risk': p.get('risk'),
+                                'Reward': p.get('reward'),
+                                'Confidence': p.get('confidence'),
+                                'Rationale': p.get('rationale') or p.get('notes')
+                            }
+                            for p in ai_picks
+                        ])
+                        st.dataframe(df, use_container_width=True)
+            else:
+                st.info(f"🤖 AI Review disabled: {ai_review.get('reason', 'not configured')}")
+
+        # Continue with existing summary rendering
         total_analyzed = recommendations.get('total_stocks_analyzed', 0)
         missing_failed = recommendations.get('skipped_count', max(0, requested_universe - total_analyzed))
         with col0:

@@ -1,10 +1,10 @@
-# 🏛️ SmartTrade AI - Professional Trading Analysis System
+# 🏛️ SmartTrade AI - Professional Trading Analysis System (Ultimate Strategy + AI)
 
 **Institutional-Grade Stock Analysis • Real-Time Pricing • Professional Signals • $0/Month**
 
 ## 🎯 What This Is
 
-A comprehensive, AI-powered trading analysis platform that provides **professional-grade stock market analysis** and trading recommendations. This system rivals **Bloomberg Terminal** ($24,000/year) and **FactSet** ($12,000/year) but costs **$0/month** using only free data sources.
+A comprehensive, AI-powered trading analysis platform that provides **professional-grade stock market analysis** and trading recommendations. This system rivals **Bloomberg Terminal** ($24,000/year) and **FactSet** ($12,000/year) but costs **$0/month** using only free data sources. Now includes **Ultimate Strategy + AI**: a 4-strategy consensus with a post-run AI review powered by xAI Grok.
 
 ## ✨ Key Features
 
@@ -14,11 +14,12 @@ A comprehensive, AI-powered trading analysis platform that provides **profession
 - **Professional risk management** with automatic stop-losses
 - **High conviction picks** with confidence scoring
 
-### 📊 **Comprehensive Analysis**
+### 📊 **Comprehensive Analysis + AI Overlay**
 - **100+ Technical Indicators**: RSI, MACD, Ichimoku Cloud, Fibonacci, Pivot Points
 - **Advanced Fundamental Analysis**: Earnings quality, analyst consensus, price targets
 - **Multi-Source Sentiment**: Yahoo Finance, Google News, Reddit, Twitter
 - **9 Machine Learning Models**: Random Forest, XGBoost, LightGBM, Neural Networks
+ - **Ultimate Strategy + AI**: 4-strategy true consensus with an AI post-run review (market stance, Tier 1/2/3 picks, timeframe, risks)
 
 ### 💰 **Real-Time Professional Features**
 - **Live Current Prices** with exact real-time quotes
@@ -42,13 +43,19 @@ git clone https://github.com/yourusername/smarttrade-ai.git
 cd smarttrade-ai
 
 # Install dependencies
-pip install -r requirements_advanced.txt
+pip install -r requirements.txt
 
 # Run the professional terminal
-streamlit run professional_trading_app.py
+streamlit run professional_trading_app.py --server.port 8502
 ```
 
 Open `http://localhost:8501` in your browser.
+Open `http://localhost:8502` in your browser.
+
+### 🔐 Keys & Security (Public-Safe)
+- No secrets are committed. `.env` and `api_keys.py` are ignored by git
+- Set `XAI_API_KEY` in your environment for the AI overlay (xAI Grok)
+- Optional: `XAI_MODEL` to override the default `grok-4-fast-reasoning`
 
 ## 📈 How It Works
 

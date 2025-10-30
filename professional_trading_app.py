@@ -188,14 +188,14 @@ st.sidebar.markdown("## 🎯 Analysis Parameters")
 # Professional analysis options
 analysis_type = st.sidebar.selectbox(
     "Analysis Type",
-    ["🏆 Ultimate Strategy (Automated 4-Strategy Consensus)", 
+    ["🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)", 
      "Institutional Grade", "Hedge Fund Style", "Investment Bank Level", "Quant Research", "Risk Management"]
 )
 
 # Show description for Ultimate Strategy
-if analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)":
+if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)":
     st.sidebar.success("""
-    **🏆 IMPROVED Ultimate Strategy (True Consensus):**
+    **🏆 Ultimate Strategy + AI (True Consensus + AI Review):**
     
     All 4 strategies analyze THE SAME 779 stocks:
     1. Institutional Consensus (stability focus)
@@ -208,16 +208,14 @@ if analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)":
     - 3/4 agree = STRONG BUY (85% confidence, LOW RISK)
     - 2/4 agree = BUY (75% confidence, MEDIUM RISK)
     
-    **Output:** True consensus picks with detailed agreement metrics
+    **Output:** True consensus picks with detailed agreement metrics + AI market/stock review
     
-    **Time:** 2-3 hours
+    **Time:** 45–60 minutes
     **Expected Return:** 26-47% annually (lower risk)
-    
-    ⚠️ Other parameters below are ignored when using Ultimate Strategy.
     """)
 
 # Determine if Ultimate Strategy is selected to simplify sidebar
-is_ultimate = (analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)")
+is_ultimate = (analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)")
 
 # Toggle ML training (optional: longer run, potentially higher accuracy)
 if not is_ultimate:
@@ -566,11 +564,11 @@ def apply_guardrails(results,
 if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
     
     # Check if Ultimate Strategy is selected
-    if analysis_type == "🏆 Ultimate Strategy (Automated 4-Strategy Consensus)":
+    if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)":
         
         st.markdown("---")
-        st.markdown("# 🏆 ULTIMATE STRATEGY - AUTOMATED 4-STRATEGY CONSENSUS")
-        st.markdown("### Running all 4 optimal strategies automatically...")
+        st.markdown("# 🏆 ULTIMATE STRATEGY + AI - AUTOMATED 4-STRATEGY CONSENSUS")
+        st.markdown("### Running all 4 optimal strategies automatically + AI review...")
         
         # Initialize FIXED Ultimate Strategy Analyzer (optimized - 45 min instead of 8+ hours)
         ultimate_analyzer = FixedUltimateStrategyAnalyzer(analyzer)
@@ -584,26 +582,27 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
             progress_bar.progress(progress)
         
         # Run Ultimate Strategy
-        with st.spinner("Running Ultimate Strategy Analysis (this will take 2-3 hours)..."):
+        with st.spinner("Running Ultimate Strategy Analysis (this will take 45–60 minutes)..."):
             
-            st.info("⏱️ **Estimated Time:** 2-3 hours for complete 4-strategy analysis")
-            st.info("☕ **Tip:** Grab a coffee! This comprehensive analysis is worth the wait.")
+            st.info("⏱️ **Estimated Time:** 45–60 minutes for complete 4-strategy analysis + AI review")
+            st.info("☕ **Tip:** Sit back while we finalize the consensus and AI review.")
             
             final_recommendations = ultimate_analyzer.run_ultimate_strategy(
                 progress_callback=update_progress
             )
-            
-            progress_bar.empty()
-            status_text.empty()
-            
-            # Display results
-            ultimate_analyzer.display_ultimate_strategy_results(final_recommendations)
-            
-            st.success("✅ Ultimate Strategy Analysis Complete!")
-            st.balloons()
-            
-            # Stop execution here - Ultimate Strategy has its own display
-            st.stop()
+
+        # Clear progress UI after analysis completes
+        progress_bar.empty()
+        status_text.empty()
+
+        # Display results
+        ultimate_analyzer.display_ultimate_strategy_results(final_recommendations)
+        
+        st.success("✅ Ultimate Strategy + AI Analysis Complete!")
+        st.balloons()
+        
+        # Stop execution here - Ultimate Strategy has its own display
+        st.stop()
         
     else:
         # Regular single-strategy analysis
