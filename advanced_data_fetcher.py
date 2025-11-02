@@ -732,6 +732,14 @@ class AdvancedDataFetcher:
             spy_vol_20 = None
             spy_data_source = "default"
             
+            # Optional paid sources manager (Polygon/TwelveData/Finnhub/AlphaVantage)
+            paid_manager = None
+            try:
+                from paid_data_sources import PaidDataManager
+                paid_manager = PaidDataManager()
+            except Exception:
+                paid_manager = None
+
             # Try multiple sources for SPY data (ordered by reliability, problematic tickers removed)
             spy_sources = [
                 ("web_scrape_SPY", lambda: self._fetch_simple_web_data("SPY")),  # Most reliable currently
@@ -743,7 +751,9 @@ class AdvancedDataFetcher:
                 ("stooq_spy_us", lambda: self._fetch_stooq_history("spy.us")),
                 ("stooq_ivv", lambda: self._fetch_stooq_history("IVV")),
                 ("yfinance_QQQ", lambda: _safe_yf_daily("QQQ")),  # NASDAQ proxy if S&P fails
-            ]
+            ] + (
+                [("paid_SPY", lambda: paid_manager.get_stock_data("SPY", "1mo"))] if paid_manager else []
+            )
             
             for source_name, fetch_func in spy_sources:
                 try:
@@ -783,7 +793,13 @@ class AdvancedDataFetcher:
                 ("stooq_vixy", lambda: self._fetch_stooq_history("vixy.us")),
                 ("web_scrape_VIX", lambda: self._fetch_simple_web_data("^VIX")),  # Web scraping VIX
                 ("web_scrape_VIXY", lambda: self._fetch_simple_web_data("VIXY")), # Web scraping VIX ETF
-            ]
+            ] + (
+                [
+                    ("paid_VIXY", lambda: paid_manager.get_stock_data("VIXY", "1mo")),
+                    ("paid_VXX", lambda: paid_manager.get_stock_data("VXX", "1mo")),
+                    ("paid_UVXY", lambda: paid_manager.get_stock_data("UVXY", "1mo")),
+                ] if paid_manager else []
+            )
             
             for source_name, fetch_func in vix_sources:
                 try:
@@ -842,6 +858,14 @@ class AdvancedDataFetcher:
                         df_try = self._fetch_simple_web_data(sym)
                         if df_try is not None and not df_try.empty:
                             return df_try
+                    except Exception:
+                        pass
+                    # As a last resort, try paid providers for key ETFs/indices
+                    try:
+                        if paid_manager:
+                            df_try = paid_manager.get_stock_data(sym, "1mo")
+                            if df_try is not None and not df_try.empty:
+                                return df_try
                     except Exception:
                         pass
                 return None

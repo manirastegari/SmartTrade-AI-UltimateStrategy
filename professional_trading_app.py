@@ -1,4 +1,5 @@
 import streamlit as st
+import settings  # Loads .env and Streamlit secrets into environment
 import yfinance as yf
 import logging
 from io import BytesIO
@@ -17,7 +18,7 @@ logging.getLogger("urllib3").setLevel(logging.CRITICAL)
 
 from advanced_analyzer import AdvancedTradingAnalyzer
 from ultimate_strategy_analyzer_fixed import FixedUltimateStrategyAnalyzer
-from tfsa_questrade_750_universe import get_full_universe
+from cleaned_high_potential_universe import get_cleaned_high_potential_universe
 
 # Professional Trading Interface - Like Goldman Sachs, JP Morgan, Citadel
 st.set_page_config(
@@ -100,11 +101,11 @@ def get_analyzer():
     # Use light data mode by default (rate-limit friendly). ML training can be toggled below.
     analyzer = AdvancedTradingAnalyzer(enable_training=False, data_mode="light")
     
-    # Use optimized 779-stock TFSA/Questrade universe
-    analyzer.stock_universe = get_full_universe()
+    # Use premium 614-stock high-quality universe (>$2B market cap, 5+ year track records)
+    analyzer.stock_universe = get_cleaned_high_potential_universe()
     
     st.success(f"🚀 Optimizer loaded: {analyzer.max_workers} workers, caching enabled")
-    st.info(f"📊 Optimized Universe: {len(analyzer.stock_universe)} TFSA/Questrade stocks")
+    st.info(f"📊 Premium Quality Universe: {len(analyzer.stock_universe)} institutional-grade stocks (low-risk, steady growth)")
     return analyzer
 
 analyzer = get_analyzer()
@@ -197,7 +198,7 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus
     st.sidebar.success("""
     **🏆 Ultimate Strategy + AI (True Consensus + AI Review):**
     
-    All 4 strategies analyze THE SAME 779 stocks:
+    All 4 strategies analyze THE SAME 614 premium stocks:
     1. Institutional Consensus (stability focus)
     2. Hedge Fund Alpha (momentum focus)
     3. Quant Value Hunter (value focus)
@@ -207,6 +208,12 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus
     - 4/4 agree = STRONG BUY (95% confidence, LOWEST RISK)
     - 3/4 agree = STRONG BUY (85% confidence, LOW RISK)
     - 2/4 agree = BUY (75% confidence, MEDIUM RISK)
+    
+    **Premium Universe:** 614 institutional-grade stocks
+    - Market cap >$2B, 5+ year track records
+    - Pre-screened for quality and liquidity
+    - Guardrails DISABLED (stocks pre-vetted)
+    - Regime Filters RELAXED (smart market timing)
     
     **Output:** True consensus picks with detailed agreement metrics + AI market/stock review
     
@@ -257,8 +264,9 @@ if not is_ultimate:
     )
 
 """
-Hide guardrail controls for Ultimate Strategy. The Ultimate Strategy pipeline already
-enforces penny/micro-cap removal and safety guardrails internally.
+Ultimate Strategy has built-in risk management:
+- Guardrails DISABLED (premium 614-stock universe pre-screened)
+- Regime Filters RELAXED (smart market timing in weak markets only)
 """
 if not is_ultimate:
     st.sidebar.markdown("---")
@@ -273,6 +281,9 @@ if not is_ultimate:
         help="If today's move is already extreme, skip to avoid chasing big gaps.")
     exclude_biotech_guard = st.sidebar.checkbox("Exclude High-Volatility Biotech", value=True,
         help="Biotech/clinical-trial names have frequent 30-60% gap risks.")
+    # New: Auto-replace removed high-risk picks with safer alternatives
+    auto_replace_removed = st.sidebar.checkbox("Auto-replace high-risk removals", value=True,
+        help="When guardrails remove risky picks, backfill one-for-one with safer alternatives from the same analysis.")
 
 if not is_ultimate:
     market_focus = st.sidebar.selectbox(
@@ -701,6 +712,9 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
         # Post-filter by risk style for display
         results = filter_by_risk(results, risk_style)
 
+        # Keep a snapshot pre-guardrails for potential replacements
+        pre_guard_results = list(results or [])
+
         # Apply catastrophic-loss guardrails
         results, removed_flags = apply_guardrails(
             results,
@@ -710,10 +724,64 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
             max_abs_change_pct=max_abs_change_guard,
             exclude_biotech=exclude_biotech_guard,
         )
+
+        # Auto-replace removed picks with safer alternatives (one-for-one)
+        replacements_made = []
+        if enable_guardrails and auto_replace_removed and removed_flags:
+            try:
+                removed_syms = [r.get('symbol') for r in (removed_flags or []) if r.get('symbol')]
+                kept_syms = {r.get('symbol') for r in (results or [])}
+                # Build candidate pool from pre-guard results not already kept and not removed
+                pool = [r for r in (pre_guard_results or []) if r.get('symbol') not in kept_syms and r.get('symbol') not in set(removed_syms)]
+                # Safety-first filter
+                safe_pool = []
+                for r in pool:
+                    price = float(r.get('current_price', 0) or 0)
+                    vol = int(r.get('volume', 0) or 0)
+                    change1d = float(r.get('price_change_1d', 0) or 0)
+                    risk = (r.get('risk_level') or 'Medium')
+                    vol_score = float(r.get('volatility_score', 50) or 50)
+                    # Pass guard-like checks and prefer BUY/STRONG BUY if available
+                    if price and price < float(min_price_guard):
+                        continue
+                    if vol < int(min_volume_guard):
+                        continue
+                    if abs(change1d) >= float(max_abs_change_guard):
+                        continue
+                    if str(risk).lower() == 'high':
+                        continue
+                    if vol_score > 70:
+                        continue
+                    safe_pool.append(r)
+                # Rank safer pool: prefer BUY/STRONG BUY, then by (overall_score, momentum, upside, -vol)
+                def rank_key(x):
+                    rec = (x.get('recommendation') or '').upper()
+                    rec_rank = 2 if rec == 'STRONG BUY' else 1 if rec == 'BUY' else 0
+                    return (
+                        rec_rank,
+                        float(x.get('overall_score', 0) or 0),
+                        float(x.get('momentum_score', 0) or 0),
+                        float(x.get('prediction', x.get('upside_potential', 0)) or 0),
+                        -float(x.get('volatility_score', 100) or 100),
+                    )
+                safe_pool.sort(key=rank_key, reverse=True)
+                # Map replacements 1:1 in order
+                for rem in removed_syms:
+                    if not safe_pool:
+                        break
+                    pick = safe_pool.pop(0)
+                    # Tag replacement and append
+                    pick = dict(pick)
+                    pick['replacement'] = True
+                    pick['replacement_for'] = rem
+                    results.append(pick)
+                    replacements_made.append({'replacement': pick.get('symbol'), 'for': rem})
+            except Exception:
+                pass
         
         progress_bar.empty()
         status_text.empty()
-    
+
     if results and len(results) > 0:
         # Show guardrail effect if applied
         if enable_guardrails:
@@ -722,7 +790,12 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
                 with st.expander(f"🛡️ Guardrails removed {removed_count} high-risk picks (click to view)"):
                     removed_df = pd.DataFrame(removed_flags)
                     st.dataframe(removed_df, use_container_width=True)
-        
+            # Show replacements summary if any
+            if 'replacements_made' in locals() and replacements_made:
+                with st.expander(f"🔁 Auto-replaced {len(replacements_made)} removed picks (click to view)"):
+                    rep_df = pd.DataFrame(replacements_made)
+                    st.dataframe(rep_df, use_container_width=True)
+
         # Professional Dashboard Layout
         st.markdown("## 🏛️ Professional Analysis Dashboard")
         
@@ -923,7 +996,7 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
                 with col2:
                     st.metric(
                         label="Upside Potential",
-                        value=f"{stock['prediction']:+.1f}%",
+                        value=f"{stock['prediction']:+.1}%",
                         delta=f"Target: ${stock['current_price'] * (1 + stock['prediction']/100):.2f}"
                     )
                 

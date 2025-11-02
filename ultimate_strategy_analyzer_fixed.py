@@ -32,13 +32,13 @@ class FixedUltimateStrategyAnalyzer:
         self.base_results = {}  # Store single analysis run
         self.strategy_results = {}
         self.consensus_recommendations = []
-        # Guardrail thresholds (to avoid catastrophic picks)
-        self.guard_min_price = 5.0
-        self.guard_min_volume = 300_000
-        self.guard_max_abs_change_pct = 15.0
-        self.guard_exclude_biotech = True
+        # Guardrails DISABLED - Premium universe has pre-screened high-quality stocks
+        self.guard_enabled = False  # Disabled for premium 614-stock universe
+        # Symbol hygiene controls
+        self._symbol_denylist = self._load_symbol_denylist()
+        self._denylist_excluded = []
         
-    def run_ultimate_strategy(self, progress_callback=None):
+    def run_ultimate_strategy(self, progress_callback=None, *, auto_export: bool = True):
         """
         Run FIXED Ultimate Strategy - Analysis runs ONCE, then 4 scoring perspectives
         
@@ -60,6 +60,9 @@ class FixedUltimateStrategyAnalyzer:
             progress_callback("Loading full stock universe (779 stocks)...", 5)
         
         full_universe = self.analyzer._get_expanded_stock_universe()
+        requested_universe = list(full_universe) if isinstance(full_universe, (list, tuple)) else []
+        # Apply optional symbol denylist before analysis
+        full_universe, self._denylist_excluded = self._apply_symbol_denylist(full_universe)
         
         if progress_callback:
             progress_callback(f"Loaded {len(full_universe)} stocks for analysis", 8)
@@ -157,8 +160,36 @@ class FixedUltimateStrategyAnalyzer:
         
         self.analysis_end_time = datetime.now()
         
-        # Auto export to Excel
-        self._auto_export_to_excel(final_recommendations)
+        # Auto export to Excel (optional)
+        try:
+            export_path = None
+            if auto_export:
+                export_path = self._auto_export_to_excel(final_recommendations)
+            # Surface export path in results for upstream callers
+            if export_path:
+                try:
+                    final_recommendations['export_file'] = export_path
+                except Exception:
+                    pass
+        except Exception:
+            # Export errors are non-fatal to the main analysis flow
+            pass
+        # Persist lightweight diagnostics for provenance and guardrail traceability
+        try:
+            analyzed_symbols = sorted(list(self.base_results.keys()))
+            removed_guard = list(final_recommendations.get('removed_by_guardrails', []))
+            self._save_run_diagnostics(
+                requested_universe=requested_universe,
+                after_denylist=full_universe,
+                analyzed_symbols=analyzed_symbols,
+                removed_by_guardrails=removed_guard,
+                removed_by_regime=final_recommendations.get('removed_by_regime', []),
+                meta=self.last_run_meta,
+                denylist_excluded=self._denylist_excluded,
+            )
+        except Exception:
+            # Diagnostics are best-effort and must not block main flow
+            pass
         
         return final_recommendations
     
@@ -360,6 +391,28 @@ class FixedUltimateStrategyAnalyzer:
             # Get base stock data
             base_data = self.base_results.get(symbol, {})
             
+            # Build a concise 'why' explanation for transparency
+            try:
+                mom_ = float(base_data.get('momentum_score', 0) or 0)
+            except Exception:
+                mom_ = 0.0
+            try:
+                vol_ = float(base_data.get('volatility_score', 0) or 0)
+            except Exception:
+                vol_ = 0.0
+            try:
+                up_ = float(base_data.get('upside_potential', 0) or 0)
+            except Exception:
+                up_ = 0.0
+            risk_ = self._determine_consensus_risk(buy_count, score_std)
+            why_parts = [
+                f"{buy_count}/4 agree",
+                f"Momentum {mom_:.0f}",
+                f"Vol {vol_:.0f}",
+                f"Upside {up_:.1f}%",
+                f"Risk {risk_}"
+            ]
+
             consensus_stock = {
                 'symbol': symbol,
                 'consensus_score': avg_score,
@@ -374,9 +427,10 @@ class FixedUltimateStrategyAnalyzer:
                 'current_price': base_data.get('current_price', 0),
                 'target_price': base_data.get('technical_target', 0),
                 'upside_potential': base_data.get('upside_potential', 0),
-                'risk_level': self._determine_consensus_risk(buy_count, score_std),
+                'risk_level': risk_,
                 'market_cap': base_data.get('market_cap', 0),
-                'sector': base_data.get('sector', 'Unknown')
+                'sector': base_data.get('sector', 'Unknown'),
+                'why': " | ".join(why_parts)
             }
             
             consensus_stocks.append(consensus_stock)
@@ -387,10 +441,132 @@ class FixedUltimateStrategyAnalyzer:
             reverse=True
         )
 
+        # Keep a copy before any safety/regime filters for replacement pooling
+        pre_filter_consensus = list(consensus_stocks)
+
         # Apply catastrophic-loss guardrails to consensus picks
         consensus_stocks, removed_guard = self._apply_guardrails_to_consensus(consensus_stocks)
+
+        # Apply regime-aware conservative filter (Caution Mode or env toggle)
+        consensus_stocks, removed_regime = self._apply_regime_filters(consensus_stocks, market_analysis)
+        try:
+            import os as _os
+            regime = str((market_analysis or {}).get('regime') or '').lower()
+            regime_filter_active = False if str(_os.environ.get('SMARTTRADE_DISABLE_REGIME_FILTER','') or '').lower() in ('1','true','yes') else (regime == 'caution' or str(_os.environ.get('SMARTTRADE_CONSERVATIVE','') or '').lower() in ('1','true','yes'))
+        except Exception:
+            regime_filter_active = False
+
+        # Optional: Auto-replace removed high-risk picks with safer alternatives
+        try:
+            import os as _os
+            auto_replace_enabled = str(_os.environ.get('SMARTTRADE_AUTO_REPLACE', '1') or '1').lower() not in ('0','false','no')
+        except Exception:
+            auto_replace_enabled = True
+
+        auto_replacements = []
+        if auto_replace_enabled:
+            try:
+                removed_all = []
+                try:
+                    removed_all.extend(list(removed_guard or []))
+                except Exception:
+                    pass
+                try:
+                    removed_all.extend(list(removed_regime or []))
+                except Exception:
+                    pass
+                removed_syms = [x.get('symbol') for x in removed_all if isinstance(x, dict) and x.get('symbol')]
+                removed_set = set([s for s in removed_syms if s])
+                kept_syms = set([s.get('symbol') for s in (consensus_stocks or []) if s.get('symbol')])
+
+                # Build a safety-first candidate pool from base universe excluding kept/removed
+                pool = []
+                for sym, base in (self.base_results or {}).items():
+                    usym = str(sym).upper()
+                    if usym in kept_syms or usym in removed_set:
+                        continue
+                    price = float(base.get('current_price', 0) or 0)
+                    vol = int(base.get('volume', 0) or 0)
+                    change1d = float(base.get('price_change_1d', 0) or 0)
+                    risk = (base.get('risk_level') or 'Medium')
+                    vol_score = float(base.get('volatility_score', 50) or 50)
+                    # Guardrail-like checks
+                    if price and price < float(self.guard_min_price):
+                        continue
+                    if vol < int(self.guard_min_volume):
+                        continue
+                    if abs(change1d) >= float(self.guard_max_abs_change_pct):
+                        continue
+                    if str(risk).lower() == 'high':
+                        continue
+                    if vol_score > 70:
+                        continue
+                    # If regime filter is active, apply tighter momentum/volatility preferences
+                    if regime_filter_active:
+                        mom = float(base.get('momentum_score', 0) or 0)
+                        vsc = float(base.get('volatility_score', 100) or 100)
+                        if mom < 65:
+                            continue
+                        if vsc > 65:
+                            continue
+                    # Construct a consensus-like record
+                    rec = str(base.get('recommendation') or '')
+                    if not rec:
+                        # Heuristic recommendation
+                        up = float(base.get('prediction', base.get('upside_potential', 0)) or 0)
+                        rec = 'BUY' if up >= 10 and str(risk).lower() != 'high' else 'WATCH'
+                    conf = base.get('confidence')
+                    try:
+                        # Normalize to percentage if 0-1 float
+                        if conf is not None and conf <= 1:
+                            conf = int(round(float(conf) * 100))
+                    except Exception:
+                        conf = None
+                    item = {
+                        'symbol': usym,
+                        'consensus_score': float(base.get('overall_score', 60) or 60),
+                        'strategies_agreeing': int(0),
+                        'strong_buy_count': int(0),
+                        'recommendation': rec,
+                        'confidence': int(conf if conf is not None else (85 if rec == 'STRONG BUY' else 75 if rec == 'BUY' else 65)),
+                        'risk_level': risk,
+                        'current_price': float(base.get('current_price', 0) or 0),
+                        'upside_potential': float(base.get('upside_potential', base.get('prediction', 0)) or 0),
+                        'sector': base.get('sector', 'Unknown'),
+                        'target_price': float(base.get('technical_target', 0) or 0),
+                        'why': 'Replacement pick — passed safety filters | Not in original consensus'
+                    }
+                    pool.append(item)
+
+                # Rank pool by safety/quality: recommendation, overall_score, momentum, upside, low volatility
+                def _rank_key(x):
+                    base = self.base_results.get(x.get('symbol'), {})
+                    rec = (x.get('recommendation') or '').upper()
+                    rec_rank = 2 if rec == 'STRONG BUY' else 1 if rec == 'BUY' else 0
+                    return (
+                        rec_rank,
+                        float(x.get('consensus_score', 0) or 0),
+                        float(base.get('momentum_score', 0) or 0),
+                        float(x.get('upside_potential', 0) or 0),
+                        -float(base.get('volatility_score', 100) or 100),
+                    )
+
+                pool.sort(key=_rank_key, reverse=True)
+
+                # Map one-for-one replacements
+                for rem in removed_syms:
+                    if not pool:
+                        break
+                    pick = pool.pop(0)
+                    # Tag replacement
+                    pick['replacement'] = True
+                    pick['replacement_for'] = rem
+                    consensus_stocks.append(pick)
+                    auto_replacements.append({'replacement': pick.get('symbol'), 'for': rem})
+            except Exception:
+                auto_replacements = []
         
-        # Count stocks by agreement level
+    # Count stocks by agreement level (after replacements, if any)
         total_stocks_analyzed = len(all_symbols)
         requested_universe_count = int(self.last_run_meta.get('requested_count', total_stocks_analyzed))
         skipped_symbols = list(self.last_run_meta.get('skipped_symbols', []))
@@ -433,6 +609,9 @@ class FixedUltimateStrategyAnalyzer:
             'stocks_2_of_4': stocks_2_of_4,
             'stocks_1_of_4': stocks_1_of_4,
             'removed_by_guardrails': removed_guard,
+            'removed_by_regime': removed_regime,
+            'regime_filter_active': bool(regime_filter_active),
+            'auto_replacements': auto_replacements,
             'analysis_type': 'FIXED_OPTIMIZED_CONSENSUS'
         }
 
@@ -559,6 +738,21 @@ class FixedUltimateStrategyAnalyzer:
 
         prelim = enforce_sector_caps(prelim, cap=0.30, iters=3)
 
+        # Enforce final per-position caps after sector adjustments (iterative)
+        def enforce_weight_caps(rows: list[tuple[dict, float]], cap: float = 0.20, floor: float = 0.02, iters: int = 5):
+            for _ in range(iters):
+                # apply caps/floors
+                rows = [(r, max(floor, min(cap, w))) for (r, w) in rows]
+                tot = sum(w for _, w in rows) or 1.0
+                # renormalize
+                rows = [(r, w / tot) for (r, w) in rows]
+                # if all weights within cap after renorm, break
+                if all(w <= cap + 1e-6 for _, w in rows):
+                    break
+            return rows
+
+        prelim = enforce_weight_caps(prelim, cap=0.20, floor=0.02, iters=8)
+
         # Build enriched pick rows
         out_rows = []
         exp_upside = 0.0
@@ -649,36 +843,106 @@ class FixedUltimateStrategyAnalyzer:
             return []
 
     def _apply_guardrails_to_consensus(self, consensus_list: list[dict]):
-        """Remove high-risk consensus picks using conservative heuristics.
-        Returns (kept, removed_details).
+        """DISABLED: Guardrails removed for premium universe.
+        Premium 614-stock universe is pre-screened for quality (>$2B market cap, established companies).
+        Returns (kept, removed_details) - all stocks pass through.
         """
+        if not self.guard_enabled:
+            # Guardrails disabled - return all stocks
+            return list(consensus_list or []), []
+        
+        # Legacy code below (never executed with guard_enabled=False)
         kept = []
         removed = []
-        biotech_keywords = {"biotech", "biotechnology", "life sciences", "genomics", "pharma", "pharmaceutical"}
-
         for s in consensus_list:
-            base = self.base_results.get(s['symbol'], {})
-            price = float(s.get('current_price', base.get('current_price', 0)) or 0)
-            vol = int(base.get('volume', 0) or 0)
-            change1d = float(base.get('price_change_1d', 0) or 0)
-            sector = (s.get('sector', base.get('sector', '')) or '').lower()
-            vol_score = float(base.get('volatility_score', 50) or 50)
-            risk_level = base.get('risk_level', s.get('risk_level'))
+            kept.append(s)
+        return kept, removed
 
+    def _apply_regime_filters(self, consensus_list: list[dict], market_ctx: dict):
+        """Apply RELAXED regime-aware filter for premium universe.
+        - Only activates in 'caution' regime (not conservative mode by default)
+        - RELAXED thresholds for high-quality stocks:
+          * Requires ≥2/4 strategies (vs old 3/4)
+          * Momentum ≥50 (vs old 65)
+          * Volatility ≤75 (vs old 65)
+          * Allows Medium and High risk (only excludes extreme cases)
+        Returns (kept, removed_details).
+        """
+        try:
+            import os as _os
+            regime = str((market_ctx or {}).get('regime') or '').lower()
+            # Allow a hard disable override
+            if str(_os.environ.get('SMARTTRADE_DISABLE_REGIME_FILTER', '') or '').lower() in ('1','true','yes'):
+                return list(consensus_list or []), []
+            # Only activate in 'caution' regime (not conservative by default)
+            conservative = regime == 'caution'
+        except Exception:
+            conservative = False
+
+        if not conservative:
+            # No additional filtering
+            return list(consensus_list or []), []
+
+        kept = []
+        removed = []
+        for s in (consensus_list or []):
+            sym = s.get('symbol')
+            base = self.base_results.get(sym, {})
+            mom = float(base.get('momentum_score', 0) or 0)
+            vol = float(base.get('volatility_score', 100) or 100)
+            risk = (base.get('risk_level') or s.get('risk_level') or 'Medium')
+            agree = int(s.get('strategies_agreeing', 0) or 0)
             reasons = []
-            if price > 0 and price < self.guard_min_price:
-                reasons.append(f"Price ${price:.2f} < ${self.guard_min_price:.2f}")
-            if vol < self.guard_min_volume:
-                reasons.append(f"Volume {vol:,} < {self.guard_min_volume:,}")
-            if abs(change1d) >= self.guard_max_abs_change_pct:
-                reasons.append(f"|1D| move {change1d:+.1f}% ≥ {self.guard_max_abs_change_pct:.0f}%")
-            if self.guard_exclude_biotech and any(k in sector for k in biotech_keywords) and (risk_level == 'High' or vol_score >= 70):
-                reasons.append("Biotech high-volatility")
+            # RELAXED rules for premium stocks: ≥2/4 agreement; momentum ≥50; volatility ≤75
+            if agree < 2:
+                reasons.append('Caution: require ≥2/4 agreement')
+            if mom < 50:
+                reasons.append(f'Caution: momentum {mom:.0f} < 50')
+            if vol > 75:
+                reasons.append(f'Caution: volatility {vol:.0f} > 75')
+            # Note: No risk exclusion - premium stocks can handle Medium/High risk
 
             if reasons:
-                removed.append({'symbol': s['symbol'], 'reasons': ", ".join(reasons)})
+                removed.append({'symbol': sym, 'reasons': ", ".join(reasons)})
             else:
                 kept.append(s)
+
+        # If we removed everything (or nearly), use ultra-relaxed fallback
+        try:
+            if not kept and consensus_list:
+                # Ultra-relaxed fallback: allow ≥1/4 agreement, mom ≥40, vol ≤85
+                fallback = []
+                fallback_removed = []
+                for s in (consensus_list or []):
+                    sym = s.get('symbol')
+                    base = self.base_results.get(sym, {})
+                    mom = float(base.get('momentum_score', 0) or 0)
+                    vol = float(base.get('volatility_score', 100) or 100)
+                    agree = int(s.get('strategies_agreeing', 0) or 0)
+                    reasons = []
+                    if agree < 1:
+                        reasons.append('Fallback: require ≥1/4')
+                    if mom < 40:
+                        reasons.append(f'Fallback: momentum {mom:.0f} < 40')
+                    if vol > 85:
+                        reasons.append(f'Fallback: volatility {vol:.0f} > 85')
+                    if reasons:
+                        fallback_removed.append({'symbol': sym, 'reasons': ", ".join(reasons)})
+                    else:
+                        fallback.append(s)
+                # If still empty, take top 15 by (agreement, consensus_score)
+                if not fallback:
+                    ranked = sorted(
+                        (consensus_list or []),
+                        key=lambda x: (int(x.get('strategies_agreeing', 0) or 0), float(x.get('consensus_score', 0) or 0)),
+                        reverse=True
+                    )
+                    fallback = ranked[:15]
+                # Combine removal reasons
+                removed.extend(fallback_removed)
+                return fallback, removed
+        except Exception:
+            pass
 
         return kept, removed
     
@@ -692,12 +956,32 @@ class FixedUltimateStrategyAnalyzer:
             return 'High'
     
     def _analyze_market_conditions(self) -> Dict:
-        """Analyze overall market conditions"""
-        return {
+        """Analyze overall market conditions with lightweight external signals.
+        Adds semis-vs-QQQ relative strength and simple SMA state without heavy API usage.
+        """
+        ctx = {
             'status': 'NEUTRAL',
             'vix': 15.0,
             'trend': 'SIDEWAYS'
         }
+        try:
+            from market_context_signals import get_market_context_signals
+            sig = get_market_context_signals()
+            if isinstance(sig, dict):
+                ctx.update({
+                    'soxx_qqq_ratio_slope': sig.get('soxx_qqq_ratio_slope'),
+                    'soxx_qqq_is_rising': sig.get('soxx_qqq_is_rising'),
+                    'qqq_above_sma50': sig.get('qqq_above_sma50'),
+                    'qqq_above_sma200': sig.get('qqq_above_sma200'),
+                    'soxx_above_sma50': sig.get('soxx_above_sma50'),
+                    'soxx_above_sma200': sig.get('soxx_above_sma200'),
+                    'regime': sig.get('regime'),
+                    'regime_hint': sig.get('hint'),
+                })
+        except Exception:
+            # Signals are optional; keep default context on failure
+            pass
+        return ctx
     
     def _analyze_sector_trends(self) -> Dict:
         """Analyze sector trends"""
@@ -719,6 +1003,100 @@ class FixedUltimateStrategyAnalyzer:
             'stocks_1_of_4': 0,
             'analysis_type': 'FIXED_OPTIMIZED_CONSENSUS'
         }
+
+    # -----------------------
+    # Symbol hygiene + logging
+    # -----------------------
+    def _load_symbol_denylist(self) -> set:
+        """Load a symbol denylist from env var and optional repo file.
+        - Env var: SMARTTRADE_DENYLIST="SYM1,SYM2"
+        - File: symbol_denylist.txt (one symbol per line, '#' comments allowed)
+        Returns an uppercased set of symbols.
+        """
+        try:
+            import os as _os
+            deny = set()
+            env_val = _os.environ.get('SMARTTRADE_DENYLIST', '')
+            if env_val:
+                deny.update(s.strip().upper() for s in env_val.split(',') if s.strip())
+            # Optional file in repo root
+            try:
+                repo_root = _os.path.dirname(__file__)
+                file_path = _os.path.join(repo_root, 'symbol_denylist.txt')
+                if _os.path.isfile(file_path):
+                    with open(file_path, 'r') as f:
+                        for line in f:
+                            t = line.strip()
+                            if not t or t.startswith('#'):
+                                continue
+                            deny.add(t.upper())
+            except Exception:
+                pass
+            return deny
+        except Exception:
+            return set()
+
+    def _apply_symbol_denylist(self, symbols: list) -> tuple[list, list]:
+        """Filter provided symbols by internal denylist.
+        Returns (filtered_symbols, excluded_list).
+        """
+        try:
+            deny = self._symbol_denylist or set()
+            if not deny or not isinstance(symbols, (list, tuple)):
+                return list(symbols), []
+            filtered = []
+            excluded = []
+            for s in symbols:
+                u = str(s).upper()
+                if u in deny:
+                    excluded.append(u)
+                else:
+                    filtered.append(s)
+            if excluded:
+                print(f"🧹 Denylist active: excluded {len(excluded)} symbol(s): {', '.join(excluded[:10])}{'…' if len(excluded)>10 else ''}")
+            return filtered, excluded
+        except Exception:
+            return list(symbols), []
+
+    def _save_run_diagnostics(
+        self,
+        *,
+        requested_universe: list,
+        after_denylist: list,
+        analyzed_symbols: list,
+        removed_by_guardrails: list,
+        removed_by_regime: list,
+        meta: dict,
+        denylist_excluded: list,
+    ) -> None:
+        """Persist a compact diagnostics manifest for traceability.
+        Writes to .cache/logs/last_run_diagnostics.json
+        """
+        try:
+            import os as _os
+            import json as _json
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            logs_dir = _os.path.join(_os.path.dirname(__file__), '.cache', 'logs')
+            _os.makedirs(logs_dir, exist_ok=True)
+            path = _os.path.join(logs_dir, 'last_run_diagnostics.json')
+            payload = {
+                'timestamp': ts,
+                'requested_universe_count': len(requested_universe or []),
+                'requested_universe_sample': list((requested_universe or [])[:50]),
+                'after_denylist_count': len(after_denylist or []),
+                'denylist_excluded': list(denylist_excluded or []),
+                'analyzed_symbols_count': len(analyzed_symbols or []),
+                'analyzed_symbols_sample': list((analyzed_symbols or [])[:50]),
+                'removed_by_guardrails': list(removed_by_guardrails or []),
+                'removed_by_regime': list(removed_by_regime or []),
+                'upstream_meta': meta or {},
+            }
+            with open(path, 'w') as f:
+                _json.dump(payload, f, indent=2)
+            print(f"📝 Diagnostics saved: {path}")
+        except Exception:
+            # Non-fatal
+            pass
 
     def _run_ai_review(self, consensus_recs: List[Dict], market_analysis: Dict, sector_analysis: Dict) -> Dict:
         """Invoke xAI Grok to produce a professional post-run review.
@@ -841,14 +1219,70 @@ class FixedUltimateStrategyAnalyzer:
             consensus_recs = results.get('consensus_recommendations', [])
             
             if not consensus_recs:
-                print("⚠️ No consensus recommendations to export")
-                return
+                print("⚠️ No consensus recommendations to export - creating summary-only workbook")
+                # Create minimal workbook with Summary + transparency sheets
+                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                    summary_data = {
+                        'Metric': [
+                            'Analysis Start Time',
+                            'Analysis End Time',
+                            'Requested Universe',
+                            'Total Stocks Analyzed',
+                            'Missing/Failed Symbols',
+                            'Total Consensus Picks',
+                            'Analysis Type',
+                            'Runtime (minutes)',
+                            'Regime Filter Active'
+                        ],
+                        'Value': [
+                            self.analysis_start_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_start_time') else timestamp[:8] + ' ' + timestamp[9:],
+                            self.analysis_end_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_end_time') else datetime.now().strftime("%Y%m%d %H%M%S"),
+                            results.get('requested_universe_count', results.get('total_stocks_analyzed', 0)),
+                            results.get('total_stocks_analyzed', 0),
+                            results.get('skipped_count', 0),
+                            0,
+                            'ULTIMATE STRATEGY V5.0 - Summary Only',
+                            round((self.analysis_end_time - self.analysis_start_time).total_seconds() / 60, 1) if hasattr(self, 'analysis_end_time') and hasattr(self, 'analysis_start_time') else 0,
+                            str(results.get('regime_filter_active', False))
+                        ]
+                    }
+                    pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
+
+                    # Transparency sheets if present
+                    try:
+                        _removed = results.get('removed_by_guardrails') or []
+                        if isinstance(_removed, list) and _removed:
+                            pd.DataFrame(_removed).to_excel(writer, sheet_name='Guardrail_Removals', index=False)
+                    except Exception:
+                        pass
+                    try:
+                        _rem_reg = results.get('removed_by_regime') or []
+                        if isinstance(_rem_reg, list) and _rem_reg:
+                            pd.DataFrame(_rem_reg).to_excel(writer, sheet_name='Regime_Filtered', index=False)
+                    except Exception:
+                        pass
+                    try:
+                        _repl = results.get('auto_replacements') or []
+                        if isinstance(_repl, list) and _repl:
+                            pd.DataFrame(_repl).to_excel(writer, sheet_name='Auto_Replacements', index=False)
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(self, '_denylist_excluded', None):
+                            pd.DataFrame([{'Symbol': s} for s in sorted(set(self._denylist_excluded))]).to_excel(writer, sheet_name='Denylist_Excluded', index=False)
+                    except Exception:
+                        pass
+                # Continue to Git push below
+                print(f"✅ Excel file created (summary-only): {filename}")
+                # Proceed to git add/commit/push below
             
-            # Create Excel writer
-            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            # Create Excel writer (context-managed) and write available sheets
+            if consensus_recs:
+                # Use context manager to guarantee file closure even if a sheet fails
+                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
                 
-                # Sheet 1: Summary
-                summary_data = {
+                    # Sheet 1: Summary
+                    summary_data = {
                     'Metric': [
                         'Analysis Start Time',
                         'Analysis End Time',
@@ -863,182 +1297,486 @@ class FixedUltimateStrategyAnalyzer:
                         'Analysis Type',
                         'Runtime (minutes)'
                     ],
-                    'Value': [
-                        self.analysis_start_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_start_time') else timestamp[:8] + ' ' + timestamp[9:],
-                        self.analysis_end_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_end_time') else datetime.now().strftime("%Y%m%d %H%M%S"),
-                        results.get('requested_universe_count', results.get('total_stocks_analyzed', 0)),
-                        results.get('total_stocks_analyzed', 0),
-                        results.get('skipped_count', 0),
-                        results.get('stocks_4_of_4', 0),
-                        results.get('stocks_3_of_4', 0),
-                        results.get('stocks_2_of_4', 0),
-                        results.get('stocks_1_of_4', 0),
-                        len(consensus_recs),
-                        'ULTIMATE STRATEGY V5.0 - 75-80% Accuracy, Smart Caching, Fixed ML',
-                        round((self.analysis_end_time - self.analysis_start_time).total_seconds() / 60, 1) if hasattr(self, 'analysis_end_time') and hasattr(self, 'analysis_start_time') else 0
-                    ]
-                }
-                summary_df = pd.DataFrame(summary_data)
-                summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                        'Value': [
+                            self.analysis_start_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_start_time') else timestamp[:8] + ' ' + timestamp[9:],
+                            self.analysis_end_time.strftime("%Y%m%d %H%M%S") if hasattr(self, 'analysis_end_time') else datetime.now().strftime("%Y%m%d %H%M%S"),
+                            results.get('requested_universe_count', results.get('total_stocks_analyzed', 0)),
+                            results.get('total_stocks_analyzed', 0),
+                            results.get('skipped_count', 0),
+                            results.get('stocks_4_of_4', 0),
+                            results.get('stocks_3_of_4', 0),
+                            results.get('stocks_2_of_4', 0),
+                            results.get('stocks_1_of_4', 0),
+                            len(consensus_recs),
+                            'ULTIMATE STRATEGY V5.0 - 75-80% Accuracy, Smart Caching, Fixed ML',
+                            round((self.analysis_end_time - self.analysis_start_time).total_seconds() / 60, 1) if hasattr(self, 'analysis_end_time') and hasattr(self, 'analysis_start_time') else 0
+                        ]
+                    }
+                    summary_df = pd.DataFrame(summary_data)
+                    try:
+                        summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                    except Exception:
+                        pass
+
+                    # Sheet 1b: Market Context (Regime, SOXX/QQQ, SMA states)
+                    try:
+                        mc = results.get('market_analysis') or {}
+                        mc_rows = [{
+                            'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'Regime': mc.get('regime'),
+                            'Guidance': mc.get('regime_hint'),
+                            'SOXX/QQQ Ratio Slope': mc.get('soxx_qqq_ratio_slope'),
+                            'Semis Leading (SOXX>QQQ)': bool(mc.get('soxx_qqq_is_rising')),
+                            'QQQ > SMA50': bool(mc.get('qqq_above_sma50')),
+                            'QQQ > SMA200': bool(mc.get('qqq_above_sma200')),
+                            'SOXX > SMA50': bool(mc.get('soxx_above_sma50')),
+                            'SOXX > SMA200': bool(mc.get('soxx_above_sma200')),
+                        }]
+                        pd.DataFrame(mc_rows).to_excel(writer, sheet_name='Market_Context', index=False)
+                    except Exception:
+                        pass
                 
-                # Sheet 2: All Consensus Picks
-                consensus_data = []
-                # Prepare market cap backfill if base data is missing
-                symbols = [s['symbol'] for s in consensus_recs]
-                mc_backfill = _resolve_market_caps(symbols)
-                for stock in consensus_recs:
-                    # Use base market cap if available; otherwise try backfill
-                    base_mc = stock.get('market_cap', 0)
-                    if not base_mc:
-                        base_mc = self.base_results.get(stock['symbol'], {}).get('market_cap', 0)
-                    if not base_mc:
-                        base_mc = mc_backfill.get(stock['symbol']) or 0
-                    consensus_data.append({
-                        'Symbol': stock['symbol'],
-                        'Consensus Score': round(stock['consensus_score'], 2),
-                        'Strategies Agreeing': stock['strategies_agreeing'],
-                        'Strong Buy Count': stock['strong_buy_count'],
-                        'Recommendation': stock['recommendation'],
-                        'Confidence': f"{stock['confidence']}%",
-                        'Risk Level': stock['risk_level'],
-                        'Current Price': f"${stock.get('current_price', 0):.2f}",
-                        'Upside Potential': f"{stock.get('upside_potential', 0):.1f}%",
-                        'Market Cap': int(base_mc) if base_mc else 0,
-                        'Sector': stock.get('sector', 'Unknown')
-                    })
-                
-                if consensus_data:
-                    consensus_df = pd.DataFrame(consensus_data)
-                    consensus_df.to_excel(writer, sheet_name='All_Consensus_Picks', index=False)
-                
-                # Sheet 3: 4/4 Agreement (Best)
-                tier_4 = [s for s in consensus_recs if s['strategies_agreeing'] == 4]
-                if tier_4:
-                    tier4_data = []
-                    for stock in tier_4:
-                        tier4_data.append({
+                    # Sheet 2: All Consensus Picks
+                    consensus_data = []
+                    # Prepare market cap backfill if base data is missing
+                    symbols = [s['symbol'] for s in consensus_recs]
+                    mc_backfill = _resolve_market_caps(symbols)
+                    for stock in consensus_recs:
+                        # Use base market cap if available; otherwise try backfill
+                        base_mc = stock.get('market_cap', 0)
+                        if not base_mc:
+                            base_mc = self.base_results.get(stock['symbol'], {}).get('market_cap', 0)
+                        if not base_mc:
+                            base_mc = mc_backfill.get(stock['symbol']) or 0
+                        consensus_data.append({
                             'Symbol': stock['symbol'],
                             'Consensus Score': round(stock['consensus_score'], 2),
+                            'Strategies Agreeing': stock['strategies_agreeing'],
+                            'Strong Buy Count': stock['strong_buy_count'],
+                            'Recommendation': stock['recommendation'],
+                            'Confidence': f"{stock['confidence']}%",
+                            'Risk Level': stock['risk_level'],
                             'Current Price': f"${stock.get('current_price', 0):.2f}",
-                            'Upside': f"{stock.get('upside_potential', 0):.1f}%",
-                            'Risk': stock['risk_level'],
-                            'Sector': stock.get('sector', 'Unknown')
+                            'Upside Potential': f"{stock.get('upside_potential', 0):.1f}%",
+                            'Market Cap': int(base_mc) if base_mc else 0,
+                            'Sector': stock.get('sector', 'Unknown'),
+                            'Why': stock.get('why', '')
                         })
-                    tier4_df = pd.DataFrame(tier4_data)
-                    tier4_df.to_excel(writer, sheet_name='Tier1_4of4_Agreement', index=False)
-                
-                # Sheet 4: 3/4 Agreement
-                tier_3 = [s for s in consensus_recs if s['strategies_agreeing'] == 3]
-                if tier_3:
-                    tier3_data = []
-                    for stock in tier_3:
-                        tier3_data.append({
-                            'Symbol': stock['symbol'],
-                            'Consensus Score': round(stock['consensus_score'], 2),
-                            'Current Price': f"${stock.get('current_price', 0):.2f}",
-                            'Upside': f"{stock.get('upside_potential', 0):.1f}%",
-                            'Risk': stock['risk_level'],
-                            'Sector': stock.get('sector', 'Unknown')
-                        })
-                    tier3_df = pd.DataFrame(tier3_data)
-                    tier3_df.to_excel(writer, sheet_name='Tier2_3of4_Agreement', index=False)
-                
-                # Sheet 5: 2/4 Agreement
-                tier_2 = [s for s in consensus_recs if s['strategies_agreeing'] == 2]
-                if tier_2:
-                    tier2_data = []
-                    for stock in tier_2:
-                        tier2_data.append({
-                            'Symbol': stock['symbol'],
-                            'Consensus Score': round(stock['consensus_score'], 2),
-                            'Current Price': f"${stock.get('current_price', 0):.2f}",
-                            'Upside': f"{stock.get('upside_potential', 0):.1f}%",
-                            'Risk': stock['risk_level'],
-                            'Sector': stock.get('sector', 'Unknown')
-                        })
-                    tier2_df = pd.DataFrame(tier2_data)
-                    tier2_df.to_excel(writer, sheet_name='Tier3_2of4_Agreement', index=False)
-
-                # Sheet 8: AI Review (summary style)
-                ai_review = results.get('ai_review') or {}
-                if ai_review and ai_review.get('enabled'):
-                    review_rows = []
-                    model_used = ai_review.get('model') or ai_review.get('model_used')
-                    summary = ai_review.get('summary')
-                    market_assessment = ai_review.get('market_assessment')
-                    timeframe_guidance = ai_review.get('timeframe_guidance')
-                    fundamentals_review = ai_review.get('fundamentals_review')
-                    technical_review = ai_review.get('technical_review')
-                    if model_used:
-                        review_rows.append({'Section': 'Model', 'Analysis': model_used})
-                    for key, val in [
-                        ('Summary', summary),
-                        ('Market Assessment', market_assessment),
-                        ('Timeframe Guidance', timeframe_guidance),
-                        ('Fundamentals Review', fundamentals_review),
-                        ('Technical Review', technical_review),
-                    ]:
-                        if val:
-                            review_rows.append({'Section': key, 'Analysis': str(val)})
-                    if review_rows:
-                        pd.DataFrame(review_rows).to_excel(writer, sheet_name='AI_Review', index=False)
-
-                    # Sheet 9: AI Picks (structured)
-                    ai_picks = ai_review.get('ai_picks') or []
-                    if isinstance(ai_picks, list) and ai_picks:
-                        # Normalize into columns
-                        norm_rows = []
-                        for p in ai_picks:
-                            norm_rows.append({
-                                'Symbol': p.get('symbol'),
-                                'Timeframe': p.get('timeframe'),
-                                'Risk': p.get('risk'),
-                                'Reward': p.get('reward'),
-                                'Confidence': p.get('confidence'),
-                                'Rationale': p.get('rationale') or p.get('notes'),
-                            })
-                        pd.DataFrame(norm_rows).to_excel(writer, sheet_name='AI_Picks', index=False)
-                else:
-                    # Even if disabled, log the reason for transparency
-                    if ai_review and ai_review.get('reason'):
-                        pd.DataFrame([{'Status': 'AI disabled', 'Reason': ai_review.get('reason')}]).to_excel(
-                            writer, sheet_name='AI_Review', index=False
-                        )
-
-                # Sheet 6: Alpha+ Profit-Optimized Portfolio
-                alpha_plus = results.get('alpha_plus_portfolio') or {}
-                alpha_rows = (alpha_plus.get('picks') or [])
-                if alpha_rows:
-                    alpha_df = pd.DataFrame(alpha_rows)
-                    # Reorder columns for readability if present
-                    preferred_cols = ['symbol','tier','weight_pct','price','upside_pct','risk','sector','alpha_score','stop_price','target_price']
-                    alpha_df = alpha_df[[c for c in preferred_cols if c in alpha_df.columns]]
-                    alpha_df.to_excel(writer, sheet_name='AlphaPlus_Portfolio', index=False)
-
-                # Sheet 7: Skipped/Failed with reasons and suggested replacements
-                failures = results.get('failures') or []
-                skipped_syms = results.get('skipped_symbols') or []
-                repl = results.get('replacement_suggestions') or []
-                repl_map = {x.get('failed'): x.get('replacement') for x in repl if 'failed' in x}
-                failed_rows = []
-                if failures or skipped_syms:
-                    # Build a reason map from failures list
-                    reason_map = {}
-                    for item in failures:
+                    
+                    if consensus_data:
                         try:
-                            reason_map[item.get('symbol')] = item.get('reason')
+                            consensus_df = pd.DataFrame(consensus_data)
+                            consensus_df.to_excel(writer, sheet_name='All_Consensus_Picks', index=False)
                         except Exception:
                             pass
-                    for sym in skipped_syms:
-                        failed_rows.append({
+
+                    # Sheet 2b: Guardrail removals (transparency)
+                    try:
+                        _removed = results.get('removed_by_guardrails') or []
+                        if isinstance(_removed, list) and _removed:
+                            gr_df = pd.DataFrame(_removed)
+                            gr_df.to_excel(writer, sheet_name='Guardrail_Removals', index=False)
+                    except Exception:
+                        pass
+
+                    # Sheet 2c: Denylist exclusions (transparency)
+                    try:
+                        if getattr(self, '_denylist_excluded', None):
+                            dl_df = pd.DataFrame([{'Symbol': s} for s in sorted(set(self._denylist_excluded))])
+                            dl_df.to_excel(writer, sheet_name='Denylist_Excluded', index=False)
+                    except Exception:
+                        pass
+
+                    # Sheet 2d: Regime-filter removals (Caution Mode)
+                    try:
+                        _rem_reg = results.get('removed_by_regime') or []
+                        if isinstance(_rem_reg, list) and _rem_reg:
+                            rr_df = pd.DataFrame(_rem_reg)
+                            rr_df.to_excel(writer, sheet_name='Regime_Filtered', index=False)
+                    except Exception:
+                        pass
+                    # Sheet 2e: Auto Replacements mapping (transparency)
+                    try:
+                        _repl = results.get('auto_replacements') or []
+                        if isinstance(_repl, list) and _repl:
+                            ar_df = pd.DataFrame(_repl)
+                            ar_df.to_excel(writer, sheet_name='Auto_Replacements', index=False)
+                    except Exception:
+                        pass
+                
+                    # Prepare limited VWAP map (top Tier1 + Tier2) for Entry Plans
+                    vwap_map = {}
+                    try:
+                        # Build list from top Tier1 and Tier2 symbols (max 10)
+                        _tier1_syms = [s['symbol'] for s in consensus_recs if s['strategies_agreeing'] == 4][:7]
+                        _tier2_syms = [s['symbol'] for s in consensus_recs if s['strategies_agreeing'] == 3][:3]
+                        top_syms = [s for s in (_tier1_syms + _tier2_syms) if s]
+                        if top_syms:
+                            from market_context_signals import get_intraday_vwap_status
+                            vwap_map = get_intraday_vwap_status(top_syms, max_symbols=10)
+                    except Exception:
+                        vwap_map = {}
+
+                    # Sheet 3: 4/4 Agreement (Best)
+                    tier_4 = [s for s in consensus_recs if s['strategies_agreeing'] == 4]
+                    if tier_4:
+                        tier4_data = []
+                        for stock in tier_4:
+                            # Build entry plan using VWAP + regime (similar to UI)
+                            mc = results.get('market_analysis') or {}
+                            regime = str(mc.get('regime') or '').lower()
+                            entry_plan = "Run after 10:15 for VWAP"
+                            vm = vwap_map.get(stock['symbol']) if vwap_map else None
+                            if vm:
+                                try:
+                                    last = float(vm.get('last', stock.get('current_price', 0)) or 0)
+                                    vwap = float(vm.get('vwap', 0) or 0)
+                                    if vwap > 0:
+                                        over = (last - vwap) / vwap
+                                        if vm.get('above_vwap') and over < 0.03 and regime != 'caution':
+                                            entry_plan = "Buy now (above VWAP)"
+                                        elif vm.get('above_vwap') and over >= 0.03:
+                                            entry_plan = f"Wait pullback toward VWAP ${vwap:.2f}"
+                                        else:
+                                            entry_plan = f"Buy ≥ VWAP ${vwap:.2f} on reclaim"
+                                except Exception:
+                                    pass
+                            tier4_data.append({
+                                'Symbol': stock['symbol'],
+                                'Consensus Score': round(stock['consensus_score'], 2),
+                                'Current Price': f"${stock.get('current_price', 0):.2f}",
+                                'Upside': f"{stock.get('upside_potential', 0):.1f}%",
+                                'Risk': stock['risk_level'],
+                                'Sector': stock.get('sector', 'Unknown'),
+                                'Entry Plan': entry_plan,
+                            })
+                        try:
+                            tier4_df = pd.DataFrame(tier4_data)
+                            tier4_df.to_excel(writer, sheet_name='Tier1_4of4_Agreement', index=False)
+                        except Exception:
+                            pass
+                
+                    # Sheet 4: 3/4 Agreement
+                    tier_3 = [s for s in consensus_recs if s['strategies_agreeing'] == 3]
+                    if tier_3:
+                        tier3_data = []
+                        for stock in tier_3:
+                            mc = results.get('market_analysis') or {}
+                            regime = str(mc.get('regime') or '').lower()
+                            entry_plan = "Run after 10:15 for VWAP"
+                            vm = vwap_map.get(stock['symbol']) if vwap_map else None
+                            if vm:
+                                try:
+                                    last = float(vm.get('last', stock.get('current_price', 0)) or 0)
+                                    vwap = float(vm.get('vwap', 0) or 0)
+                                    if vwap > 0:
+                                        over = (last - vwap) / vwap
+                                        if vm.get('above_vwap') and over < 0.03 and regime != 'caution':
+                                            entry_plan = "Buy now (above VWAP)"
+                                        elif vm.get('above_vwap') and over >= 0.03:
+                                            entry_plan = f"Wait pullback toward VWAP ${vwap:.2f}"
+                                        else:
+                                            entry_plan = f"Buy ≥ VWAP ${vwap:.2f} on reclaim"
+                                except Exception:
+                                    pass
+                            tier3_data.append({
+                                'Symbol': stock['symbol'],
+                                'Consensus Score': round(stock['consensus_score'], 2),
+                                'Current Price': f"${stock.get('current_price', 0):.2f}",
+                                'Upside': f"{stock.get('upside_potential', 0):.1f}%",
+                                'Risk': stock['risk_level'],
+                                'Sector': stock.get('sector', 'Unknown'),
+                                'Entry Plan': entry_plan,
+                            })
+                        try:
+                            tier3_df = pd.DataFrame(tier3_data)
+                            tier3_df.to_excel(writer, sheet_name='Tier2_3of4_Agreement', index=False)
+                        except Exception:
+                            pass
+                
+                    # Sheet 5: 2/4 Agreement
+                    tier_2 = [s for s in consensus_recs if s['strategies_agreeing'] == 2]
+                    if tier_2:
+                        tier2_data = []
+                        for stock in tier_2:
+                            tier2_data.append({
+                                'Symbol': stock['symbol'],
+                                'Consensus Score': round(stock['consensus_score'], 2),
+                                'Current Price': f"${stock.get('current_price', 0):.2f}",
+                                'Upside': f"{stock.get('upside_potential', 0):.1f}%",
+                                'Risk': stock['risk_level'],
+                                'Sector': stock.get('sector', 'Unknown')
+                            })
+                        try:
+                            tier2_df = pd.DataFrame(tier2_data)
+                            tier2_df.to_excel(writer, sheet_name='Tier3_2of4_Agreement', index=False)
+                        except Exception:
+                            pass
+
+                    # Helper for Best_of_Best alpha scoring
+                    def _alpha_score(item: dict) -> float:
+                        sym = item.get('symbol')
+                        base = self.base_results.get(sym, {})
+                        mom = float(base.get('momentum_score', 50) or 50)
+                        vol = float(base.get('volatility_score', 50) or 50)
+                        upside = float(item.get('upside_potential', base.get('upside_potential', 0)) or 0)
+                        cons = float(item.get('consensus_score', 60) or 60)
+                        risk = (item.get('risk_level') or base.get('risk_level') or 'Medium')
+                        penalty = 10 if str(risk).lower() == 'high' else (0 if str(risk).lower() == 'medium' else -5)
+                        up = max(0.0, min(100.0, upside))
+                        return 0.35*cons + 0.25*mom + 0.20*(100.0 - vol) + 0.20*up - penalty
+
+                    # Sheet 10: Best_of_Best (Composite)
+                    try:
+                        ai_review = results.get('ai_review') or {}
+                        ai_picks = ai_review.get('ai_picks') or []
+                        ai_set = set([str(p.get('symbol')).upper() for p in ai_picks if p.get('symbol')])
+
+                        # Reuse/compute vwap_map if missing (use the same top symbols)
+                        if not vwap_map:
+                            _tier1_syms = [s['symbol'] for s in consensus_recs if s['strategies_agreeing'] == 4][:7]
+                            _tier2_syms = [s['symbol'] for s in consensus_recs if s['strategies_agreeing'] == 3][:3]
+                            top_syms = [s for s in (_tier1_syms + _tier2_syms) if s]
+                            try:
+                                if top_syms:
+                                    from market_context_signals import get_intraday_vwap_status
+                                    vwap_map = get_intraday_vwap_status(top_syms, max_symbols=10)
+                            except Exception:
+                                vwap_map = {}
+
+                        mc = results.get('market_analysis') or {}
+                        regime = str(mc.get('regime') or '').lower()
+                    except Exception:
+                        pass
+
+                    cand = [s for s in consensus_recs if s['strategies_agreeing'] in (4, 3)]
+                    scored = []
+                    for r in cand:
+                        sym = r.get('symbol')
+                        sc = _alpha_score(r)
+                        sc += 6 if sym in ai_set else 0
+                        sc += 4 if r.get('strategies_agreeing') == 4 else (2 if r.get('strategies_agreeing') == 3 else 0)
+                        if regime != 'caution' and mc.get('soxx_qqq_is_rising'):
+                            sc += 2
+                        scored.append((r, sc))
+                    scored.sort(key=lambda x: x[1], reverse=True)
+                    best = [r for r, _ in scored[:15]]
+
+                    # Optional: AI refine suggested buy/target/stop for Best_of_Best export
+                    ai_refined: dict[str, dict] = {}
+                    try:
+                        from xai_client import XAIClient  # type: ignore
+                        client = XAIClient()
+                        if client.is_configured() and best:
+                            payload = []
+                            for r in best:
+                                sym = r.get('symbol')
+                                base = self.base_results.get(sym, {})
+                                last = float(base.get('current_price', r.get('current_price', 0)) or 0)
+                                vm = vwap_map.get(sym) if vwap_map else None
+                                payload.append({
+                                    'symbol': sym,
+                                    'last': last,
+                                    'vwap': float(vm.get('vwap', 0)) if vm else None,
+                                    'above_vwap': bool(vm.get('above_vwap')) if vm else None,
+                                    'risk_level': r.get('risk_level'),
+                                    'consensus_score': float(r.get('consensus_score', 0) or 0),
+                                    'strategies_agreeing': int(r.get('strategies_agreeing', 0) or 0),
+                                })
+                            import json as _json
+                            system = {
+                                'role': 'system',
+                                'content': (
+                                    'You are an institutional trading assistant. Return STRICT JSON with an array under key "refined". '
+                                    'For each input symbol, provide: symbol, suggested_buy, target, stop, confidence (0-100), notes. '
+                                    'Use VWAP/last price for entries, conservative stops near support/ATR-like offsets, and realistic targets. '
+                                    'Do not include any text outside valid JSON.'
+                                )
+                            }
+                            user = {
+                                'role': 'user',
+                                'content': _json.dumps({'market': mc, 'picks': payload})
+                            }
+                            ai_out = client.chat([system, user], temperature=0.1, max_tokens=1200)
+                            rows = (ai_out or {}).get('refined') or []
+                            if isinstance(rows, list):
+                                for it in rows:
+                                    try:
+                                        sym = str(it.get('symbol') or '').upper()
+                                        if sym:
+                                            ai_refined[sym] = it
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        ai_refined = {}
+
+                    bor_rows = []
+                    for r in best:
+                        sym = r.get('symbol')
+                        base = self.base_results.get(sym, {})
+                        last = float(base.get('current_price', r.get('current_price', 0)) or 0)
+                        vm = vwap_map.get(sym) if vwap_map else None
+                        entry_plan = "Run after 10:15 for VWAP"
+                        suggested_buy = ''
+                        target_price = float(base.get('technical_target', 0) or base.get('resistance', 0) or 0)
+                        stop_price = float(base.get('support', 0) or 0)
+                        # AI-refined overrides if available
+                        ai_r = ai_refined.get(sym)
+                        if ai_r:
+                            try:
+                                sb = ai_r.get('suggested_buy')
+                                tp = ai_r.get('target')
+                                sp = ai_r.get('stop')
+                                if sb:
+                                    suggested_buy = str(sb)
+                                if tp:
+                                    target_price = float(str(tp).replace('$',''))
+                                if sp:
+                                    stop_price = float(str(sp).replace('$',''))
+                            except Exception:
+                                pass
+                        if vm and not ai_r:
+                            try:
+                                vwap = float(vm.get('vwap', 0) or 0)
+                                if vwap > 0:
+                                    over = (last - vwap) / vwap if vwap else 0
+                                    if vm.get('above_vwap') and over < 0.03 and regime != 'caution':
+                                        entry_plan = "Buy now (above VWAP)"
+                                        suggested_buy = f"~${last:.2f}"
+                                    elif vm.get('above_vwap') and over >= 0.03:
+                                        entry_plan = f"Wait pullback toward VWAP ${vwap:.2f}"
+                                        suggested_buy = f"~${vwap:.2f}"
+                                    else:
+                                        entry_plan = f"Buy ≥ VWAP ${vwap:.2f} on reclaim"
+                                        suggested_buy = f"≥${vwap:.2f}"
+                            except Exception:
+                                pass
+                        if not suggested_buy and last:
+                            suggested_buy = f"~${last:.2f}"
+                        if not target_price and last:
+                            target_price = round(last * 1.10, 2)
+                        if not stop_price and last:
+                            stop_price = round(last * 0.93, 2)
+                        rr = ''
+                        try:
+                            risk = max(0.01, last - float(stop_price))
+                            reward = max(0.0, float(target_price) - last)
+                            rr = f"{(reward/risk):.2f}x" if risk > 0 else ''
+                        except Exception:
+                            rr = ''
+
+                        bor_rows.append({
                             'Symbol': sym,
-                            'Reason': reason_map.get(sym, ''),
-                            'Suggested Replacement (TFSA/QT)': repl_map.get(sym, '')
+                            'Agreement': f"{r.get('strategies_agreeing')}/4",
+                            'Confidence': f"{r.get('confidence')}%",
+                            'Risk': r.get('risk_level'),
+                            'Entry Plan': entry_plan,
+                            'Suggested Buy': suggested_buy,
+                            'Target': f"${float(target_price):.2f}" if target_price else '',
+                            'Stop': f"${float(stop_price):.2f}" if stop_price else '',
+                            'R:R': rr,
+                            'AI+': 'Yes' if sym in ai_set else 'No',
                         })
-                    if failed_rows:
-                        failed_df = pd.DataFrame(failed_rows)
-                        failed_df.to_excel(writer, sheet_name='Skipped_Failed', index=False)
-            
+                        if bor_rows:
+                            try:
+                                pd.DataFrame(bor_rows).to_excel(writer, sheet_name='Best_of_Best', index=False)
+                            except Exception:
+                                pass
+
+                    # Sheet 8: AI Review (summary style)
+                    ai_review = results.get('ai_review') or {}
+                    if ai_review and ai_review.get('enabled'):
+                        review_rows = []
+                        model_used = ai_review.get('model') or ai_review.get('model_used')
+                        summary = ai_review.get('summary')
+                        market_assessment = ai_review.get('market_assessment')
+                        timeframe_guidance = ai_review.get('timeframe_guidance')
+                        fundamentals_review = ai_review.get('fundamentals_review')
+                        technical_review = ai_review.get('technical_review')
+                        if model_used:
+                            review_rows.append({'Section': 'Model', 'Analysis': model_used})
+                        for key, val in [
+                            ('Summary', summary),
+                            ('Market Assessment', market_assessment),
+                            ('Timeframe Guidance', timeframe_guidance),
+                            ('Fundamentals Review', fundamentals_review),
+                            ('Technical Review', technical_review),
+                        ]:
+                            if val:
+                                review_rows.append({'Section': key, 'Analysis': str(val)})
+                        if review_rows:
+                            try:
+                                pd.DataFrame(review_rows).to_excel(writer, sheet_name='AI_Review', index=False)
+                            except Exception:
+                                pass
+
+                        # Sheet 9: AI Picks (structured)
+                        ai_picks = ai_review.get('ai_picks') or []
+                        if isinstance(ai_picks, list) and ai_picks:
+                            # Normalize into columns
+                            norm_rows = []
+                            for p in ai_picks:
+                                norm_rows.append({
+                                    'Symbol': p.get('symbol'),
+                                    'Timeframe': p.get('timeframe'),
+                                    'Risk': p.get('risk'),
+                                    'Reward': p.get('reward'),
+                                    'Confidence': p.get('confidence'),
+                                    'Rationale': p.get('rationale') or p.get('notes'),
+                                })
+                            try:
+                                pd.DataFrame(norm_rows).to_excel(writer, sheet_name='AI_Picks', index=False)
+                            except Exception:
+                                pass
+                    else:
+                        # Even if disabled, log the reason for transparency
+                        if ai_review and ai_review.get('reason'):
+                            try:
+                                pd.DataFrame([{'Status': 'AI disabled', 'Reason': ai_review.get('reason')}]).to_excel(
+                                    writer, sheet_name='AI_Review', index=False
+                                )
+                            except Exception:
+                                pass
+
+                    # Sheet 6: Alpha+ Profit-Optimized Portfolio
+                    alpha_plus = results.get('alpha_plus_portfolio') or {}
+                    alpha_rows = (alpha_plus.get('picks') or [])
+                    if alpha_rows:
+                        try:
+                            alpha_df = pd.DataFrame(alpha_rows)
+                            # Reorder columns for readability if present
+                            preferred_cols = ['symbol','tier','weight_pct','price','upside_pct','risk','sector','alpha_score','stop_price','target_price']
+                            alpha_df = alpha_df[[c for c in preferred_cols if c in alpha_df.columns]]
+                            alpha_df.to_excel(writer, sheet_name='AlphaPlus_Portfolio', index=False)
+                        except Exception:
+                            pass
+
+                    # Sheet 7: Skipped/Failed with reasons and suggested replacements
+                    failures = results.get('failures') or []
+                    skipped_syms = results.get('skipped_symbols') or []
+                    repl = results.get('replacement_suggestions') or []
+                    repl_map = {x.get('failed'): x.get('replacement') for x in repl if 'failed' in x}
+                    failed_rows = []
+                    if failures or skipped_syms:
+                        # Build a reason map from failures list
+                        reason_map = {}
+                        for item in failures:
+                            try:
+                                reason_map[item.get('symbol')] = item.get('reason')
+                            except Exception:
+                                pass
+                        for sym in skipped_syms:
+                            failed_rows.append({
+                                'Symbol': sym,
+                                'Reason': reason_map.get(sym, ''),
+                                'Suggested Replacement (TFSA/QT)': repl_map.get(sym, '')
+                            })
+                        if failed_rows:
+                            try:
+                                failed_df = pd.DataFrame(failed_rows)
+                                failed_df.to_excel(writer, sheet_name='Skipped_Failed', index=False)
+                            except Exception:
+                                pass
             print(f"✅ Excel file created: {filename}")
             
             # Auto-push to GitHub
@@ -1084,6 +1822,71 @@ class FixedUltimateStrategyAnalyzer:
         if hasattr(self, 'analysis_start_time') and hasattr(self, 'analysis_end_time'):
             runtime_minutes = (self.analysis_end_time - self.analysis_start_time).total_seconds() / 60
             st.info(f"⏱️ Analysis completed in **{runtime_minutes:.1f} minutes** | Version 5.0 with 9 major improvements!")
+            try:
+                st.caption(
+                    f"Start: {self.analysis_start_time.strftime('%Y-%m-%d %H:%M:%S')} • End: {self.analysis_end_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+            except Exception:
+                pass
+
+        # Offer Excel download if available and a manual export fallback
+        try:
+            import os as _os
+            export_path = None
+            # Prefer export_file embedded in recommendations (set when auto_export=True)
+            export_path = (recommendations or {}).get('export_file')
+            if export_path and _os.path.isfile(export_path):
+                with open(export_path, 'rb') as f:
+                    st.download_button(
+                        label=f"📥 Download Excel Report ({_os.path.basename(export_path)})",
+                        data=f,
+                        file_name=_os.path.basename(export_path),
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                st.caption(f"Saved at: {export_path}")
+            else:
+                # Manual export button creates the Excel from current results
+                if st.button("📄 Create Excel Export Now"):
+                    try:
+                        path = self._auto_export_to_excel(recommendations)
+                        if path and _os.path.isfile(path):
+                            with open(path, 'rb') as f:
+                                st.download_button(
+                                    label=f"📥 Download Excel Report ({_os.path.basename(path)})",
+                                    data=f,
+                                    file_name=_os.path.basename(path),
+                                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    key='download_after_export'
+                                )
+                            st.success(f"Excel exported: {path}")
+                        else:
+                            st.warning("Export attempted but file not found. Check application logs.")
+                    except Exception as _e:
+                        st.error(f"Excel export failed: {_e}")
+        except Exception:
+            pass
+
+        # Market context: Semis leadership and SMA state to guide execution
+        try:
+            mc = recommendations.get('market_analysis') or {}
+            colA, colB, colC, colD, colE = st.columns(5)
+            with colA:
+                st.markdown("**Regime**")
+                st.markdown(mc.get('regime', 'Unknown'))
+            with colB:
+                st.markdown("**Semis vs QQQ**")
+                st.markdown("Rising" if mc.get('soxx_qqq_is_rising') else "Not Rising")
+            with colC:
+                st.markdown("**QQQ > SMA50/200**")
+                st.markdown(f"{bool(mc.get('qqq_above_sma50'))}/{bool(mc.get('qqq_above_sma200'))}")
+            with colD:
+                st.markdown("**SOXX > SMA50/200**")
+                st.markdown(f"{bool(mc.get('soxx_above_sma50'))}/{bool(mc.get('soxx_above_sma200'))}")
+            with colE:
+                st.markdown("**Guidance**")
+                st.markdown(mc.get('regime_hint', ''))
+        except Exception:
+            pass
         
         # Get consensus recommendations
         consensus_recs = recommendations.get('consensus_recommendations', [])
@@ -1099,7 +1902,31 @@ class FixedUltimateStrategyAnalyzer:
             with st.expander(f"🛡️ Guardrails removed {len(removed_guard)} high-risk picks (click to view)"):
                 st.dataframe(pd.DataFrame(removed_guard), width='stretch')
 
-        # Calculate agreement tiers
+        # Show denylist exclusions (if any) for transparency
+        try:
+            if getattr(self, '_denylist_excluded', None):
+                excl = list(set([str(s).upper() for s in self._denylist_excluded]))
+                with st.expander(f"🧹 Denylist excluded {len(excl)} symbols (click to view)"):
+                    st.write(", ".join(sorted(excl)))
+        except Exception:
+            pass
+
+        # Show regime-filter removals (if any)
+        rem_reg = recommendations.get('removed_by_regime') or []
+        if rem_reg:
+            with st.expander(f"⚠️ Regime filter removed {len(rem_reg)} picks (Caution mode)"):
+                st.dataframe(pd.DataFrame(rem_reg), width='stretch')
+
+        # Show replacements (if any)
+        repl = recommendations.get('auto_replacements') or []
+        if repl:
+            with st.expander(f"🔁 Auto-replaced {len(repl)} removed picks (click to view)"):
+                try:
+                    st.dataframe(pd.DataFrame(repl), width='stretch')
+                except Exception:
+                    st.write(repl)
+
+    # Calculate agreement tiers
         tier_4_of_4 = [r for r in consensus_recs if r['strategies_agreeing'] == 4]
         tier_3_of_4 = [r for r in consensus_recs if r['strategies_agreeing'] == 3]
         tier_2_of_4 = [r for r in consensus_recs if r['strategies_agreeing'] == 2]
@@ -1147,7 +1974,7 @@ class FixedUltimateStrategyAnalyzer:
                             }
                             for p in ai_picks
                         ])
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width='stretch')
             else:
                 st.info(f"🤖 AI Review disabled: {ai_review.get('reason', 'not configured')}")
 
@@ -1170,6 +1997,200 @@ class FixedUltimateStrategyAnalyzer:
             st.metric("2/4 Agree (GOOD)", len(tier_2_of_4), help="2 strategies agree - MEDIUM RISK")
         with colD:
             st.metric("1/4 Agree", len(tier_1_of_4), help="1 strategy recommends - HIGHER RISK")
+
+        # Optional intraday VWAP status + derive Entry Plan (capped to 10 symbols)
+        vwap_map = {}
+        try:
+            # Prioritize Tier 1 then Tier 2 symbols
+            top_syms = [r['symbol'] for r in (tier_4_of_4[:7] + tier_3_of_4[:3]) if r.get('symbol')]
+            if top_syms:
+                from market_context_signals import get_intraday_vwap_status
+                vwap_map = get_intraday_vwap_status(top_syms, max_symbols=10)
+                if vwap_map:
+                    st.markdown("### ⏱️ Intraday VWAP Status (Top 10)")
+                    rows = []
+                    for s_ in top_syms:
+                        info = vwap_map.get(s_)
+                        if not info:
+                            continue
+                        rows.append({
+                            'Symbol': s_,
+                            'Above VWAP': 'Yes' if info.get('above_vwap') else 'No',
+                            'Last': round(float(info.get('last', 0.0)), 2),
+                            'VWAP': round(float(info.get('vwap', 0.0)), 2),
+                        })
+                    if rows:
+                        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+        except Exception:
+            vwap_map = {}
+
+        # Best of the Best (Composite): Tier 1+2 intersected with AI and ranked by risk-adjusted alpha
+        try:
+            ai_review = recommendations.get('ai_review') or {}
+            ai_picks = ai_review.get('ai_picks') or []
+            ai_set = set([str(p.get('symbol')).upper() for p in ai_picks if p.get('symbol')])
+            mc = recommendations.get('market_analysis') or {}
+            regime = str(mc.get('regime') or '').lower()
+
+            # Local alpha score (mirror of portfolio logic, simplified)
+            def _alpha_score(item: dict) -> float:
+                sym = item.get('symbol')
+                base = self.base_results.get(sym, {})
+                mom = float(base.get('momentum_score', 50) or 50)
+                vol = float(base.get('volatility_score', 50) or 50)
+                upside = float(item.get('upside_potential', base.get('upside_potential', 0)) or 0)
+                cons = float(item.get('consensus_score', 60) or 60)
+                risk = (item.get('risk_level') or base.get('risk_level') or 'Medium')
+                penalty = 10 if str(risk).lower() == 'high' else (0 if str(risk).lower() == 'medium' else -5)
+                up = max(0.0, min(100.0, upside))
+                return 0.35*cons + 0.25*mom + 0.20*(100.0 - vol) + 0.20*up - penalty
+
+            candidates = (tier_4_of_4[:30] + tier_3_of_4[:30])
+            # Score with bonuses
+            scored = []
+            for r in candidates:
+                sym = r.get('symbol')
+                score = _alpha_score(r)
+                score += 6 if sym in ai_set else 0
+                score += 4 if r.get('strategies_agreeing') == 4 else (2 if r.get('strategies_agreeing') == 3 else 0)
+                if regime != 'caution' and mc.get('soxx_qqq_is_rising'):
+                    score += 2
+                scored.append((r, score))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            best = [r for r, _ in scored[:10]]
+
+            # Optional: Ask AI to refine Suggested Buy/Target/Stop for top picks (small, cheap pass)
+            ai_refined: dict[str, dict] = {}
+            try:
+                from xai_client import XAIClient  # type: ignore
+                client = XAIClient()
+                if client.is_configured() and best:
+                    # Prepare compact context for AI refinement
+                    payload = []
+                    for r in best:
+                        sym = r.get('symbol')
+                        base = self.base_results.get(sym, {})
+                        last = float(base.get('current_price', r.get('current_price', 0)) or 0)
+                        vm = vwap_map.get(sym) if vwap_map else None
+                        payload.append({
+                            'symbol': sym,
+                            'last': last,
+                            'vwap': float(vm.get('vwap', 0)) if vm else None,
+                            'above_vwap': bool(vm.get('above_vwap')) if vm else None,
+                            'risk_level': r.get('risk_level'),
+                            'consensus_score': float(r.get('consensus_score', 0) or 0),
+                            'strategies_agreeing': int(r.get('strategies_agreeing', 0) or 0),
+                        })
+                    import json as _json
+                    system = {
+                        'role': 'system',
+                        'content': (
+                            'You are an institutional trading assistant. Return STRICT JSON with an array under key "refined". '
+                            'For each input symbol, provide: symbol, suggested_buy, target, stop, confidence (0-100), notes. '
+                            'Use VWAP/last price for entries, conservative stops near support/ATR-like offsets, and realistic targets. '
+                            'Do not include any text outside valid JSON.'
+                        )
+                    }
+                    user = {
+                        'role': 'user',
+                        'content': _json.dumps({
+                            'market': mc,
+                            'picks': payload,
+                            'rules': {
+                                'prefer_reclaim_entries_in_caution': True,
+                                'min_rr': '1.8x',
+                                'avoid_overextended_above_vwap': True
+                            }
+                        })
+                    }
+                    ai_out = client.chat([system, user], temperature=0.1, max_tokens=1200)
+                    rows = (ai_out or {}).get('refined') or []
+                    if isinstance(rows, list):
+                        for it in rows:
+                            try:
+                                sym = str(it.get('symbol') or '').upper()
+                                if sym:
+                                    ai_refined[sym] = it
+                            except Exception:
+                                pass
+            except Exception:
+                ai_refined = {}
+
+            if best:
+                st.markdown("---")
+                st.markdown("## 🧠 Best of the Best (Composite)")
+                st.caption("Tier 1/2 filtered by risk, boosted by AI overlap and market context. Includes Entry Plan + targets.")
+                rows = []
+                for r in best:
+                    sym = r.get('symbol')
+                    base = self.base_results.get(sym, {})
+                    last = float(base.get('current_price', r.get('current_price', 0)) or 0)
+                    vm = vwap_map.get(sym) if vwap_map else None
+                    entry_plan = "Run after 10:15 for VWAP"
+                    suggested_buy = ''
+                    target_price = float(base.get('technical_target', 0) or base.get('resistance', 0) or 0)
+                    stop_price = float(base.get('support', 0) or 0)
+                    # AI-refined overrides if available
+                    ai_r = ai_refined.get(sym)
+                    if ai_r:
+                        try:
+                            suggested_buy = ai_r.get('suggested_buy') or suggested_buy
+                            target_try = ai_r.get('target')
+                            stop_try = ai_r.get('stop')
+                            if target_try:
+                                target_price = float(str(target_try).replace('$',''))
+                            if stop_try:
+                                stop_price = float(str(stop_try).replace('$',''))
+                        except Exception:
+                            pass
+
+                    if vm and not ai_r:
+                        try:
+                            vwap = float(vm.get('vwap', 0) or 0)
+                            if vwap > 0:
+                                over = (last - vwap) / vwap if vwap else 0
+                                if vm.get('above_vwap') and over < 0.03 and regime != 'caution':
+                                    entry_plan = "Buy now (above VWAP)"
+                                    suggested_buy = f"~${last:.2f}"
+                                elif vm.get('above_vwap') and over >= 0.03:
+                                    entry_plan = f"Wait pullback toward VWAP ${vwap:.2f}"
+                                    suggested_buy = f"~${vwap:.2f}"
+                                else:
+                                    entry_plan = f"Buy ≥ VWAP ${vwap:.2f} on reclaim"
+                                    suggested_buy = f"≥${vwap:.2f}"
+                        except Exception:
+                            pass
+                    # Fallbacks
+                    if not suggested_buy and last:
+                        suggested_buy = f"~${last:.2f}"
+                    if not target_price and last:
+                        target_price = round(last * 1.10, 2)
+                    if not stop_price and last:
+                        stop_price = round(last * 0.93, 2)
+                    rr = ''
+                    try:
+                        risk = max(0.01, last - float(stop_price))
+                        reward = max(0.0, float(target_price) - last)
+                        rr = f"{(reward/risk):.2f}x" if risk > 0 else ''
+                    except Exception:
+                        rr = ''
+
+                    rows.append({
+                        'Symbol': sym,
+                        'Agreement': f"{r.get('strategies_agreeing')}/4",
+                        'Confidence': f"{r.get('confidence')}%",
+                        'Risk': r.get('risk_level'),
+                        'Entry Plan': entry_plan,
+                        'Suggested Buy': suggested_buy,
+                        'Target': f"${float(target_price):.2f}" if target_price else '',
+                        'Stop': f"${float(stop_price):.2f}" if stop_price else '',
+                        'R:R': rr,
+                        'AI+': 'Yes' if sym in ai_set else 'No',
+                    })
+                if rows:
+                    st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+        except Exception:
+            pass
 
         # Skipped/Failed details and TFSA/Questrade replacements
         fails = recommendations.get('failures') or []
@@ -1202,6 +2223,22 @@ class FixedUltimateStrategyAnalyzer:
             
             tier1_data = []
             for i, stock in enumerate(tier_4_of_4[:20], 1):
+                # Build entry plan using VWAP + regime
+                mc = recommendations.get('market_analysis') or {}
+                regime = (mc.get('regime') or '').lower()
+                entry_plan = "Run after 10:15 for VWAP"
+                if vwap_map.get(stock['symbol']):
+                    vm = vwap_map[stock['symbol']]
+                    last = float(vm.get('last', stock.get('current_price', 0)) or 0)
+                    vwap = float(vm.get('vwap', 0) or 0)
+                    if vwap > 0:
+                        over = (last - vwap) / vwap
+                        if vm.get('above_vwap') and over < 0.03 and regime != 'caution':
+                            entry_plan = f"Buy now (above VWAP)"
+                        elif vm.get('above_vwap') and over >= 0.03:
+                            entry_plan = f"Wait pullback toward VWAP ${vwap:.2f}"
+                        else:
+                            entry_plan = f"Buy ≥ VWAP ${vwap:.2f} on reclaim"
                 tier1_data.append({
                     '#': i,
                     'Symbol': stock['symbol'],
@@ -1210,7 +2247,8 @@ class FixedUltimateStrategyAnalyzer:
                     'Agreement': f"{stock['strategies_agreeing']}/4 ✅",
                     'Confidence': f"{stock['confidence']}%",
                     'Risk': stock['risk_level'],
-                    'Upside': f"{stock.get('upside_potential', 0):.1f}%"
+                    'Upside': f"{stock.get('upside_potential', 0):.1f}%",
+                    'Entry Plan': entry_plan,
                 })
             
             df1 = pd.DataFrame(tier1_data)
@@ -1226,6 +2264,21 @@ class FixedUltimateStrategyAnalyzer:
             
             tier2_data = []
             for i, stock in enumerate(tier_3_of_4[:30], 1):
+                mc = recommendations.get('market_analysis') or {}
+                regime = (mc.get('regime') or '').lower()
+                entry_plan = "Run after 10:15 for VWAP"
+                if vwap_map.get(stock['symbol']):
+                    vm = vwap_map[stock['symbol']]
+                    last = float(vm.get('last', stock.get('current_price', 0)) or 0)
+                    vwap = float(vm.get('vwap', 0) or 0)
+                    if vwap > 0:
+                        over = (last - vwap) / vwap
+                        if vm.get('above_vwap') and over < 0.03 and regime != 'caution':
+                            entry_plan = f"Buy now (above VWAP)"
+                        elif vm.get('above_vwap') and over >= 0.03:
+                            entry_plan = f"Wait pullback toward VWAP ${vwap:.2f}"
+                        else:
+                            entry_plan = f"Buy ≥ VWAP ${vwap:.2f} on reclaim"
                 tier2_data.append({
                     '#': i,
                     'Symbol': stock['symbol'],
@@ -1234,7 +2287,8 @@ class FixedUltimateStrategyAnalyzer:
                     'Agreement': f"{stock['strategies_agreeing']}/4 ✅",
                     'Confidence': f"{stock['confidence']}%",
                     'Risk': stock['risk_level'],
-                    'Upside': f"{stock.get('upside_potential', 0):.1f}%"
+                    'Upside': f"{stock.get('upside_potential', 0):.1f}%",
+                    'Entry Plan': entry_plan,
                 })
             
             df2 = pd.DataFrame(tier2_data)

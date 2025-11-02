@@ -11,6 +11,7 @@ import time
 import logging
 import subprocess
 import os
+import settings  # Ensure env is hydrated when scheduler runs
 from datetime import datetime, timedelta
 from pathlib import Path
 import pytz
@@ -183,7 +184,8 @@ class AutomatedUltimateStrategyScheduler:
             # Run the analysis
             logger.info("Running FIXED Ultimate Strategy (optimized: ~45 minutes)...")
             final_recommendations = ultimate_analyzer.run_ultimate_strategy(
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                auto_export=False  # prevent duplicate exports; scheduler exports once below
             )
             
             end_time = datetime.now(self.eastern_tz)
@@ -234,9 +236,7 @@ class AutomatedUltimateStrategyScheduler:
             # Get consensus recommendations
             recommendations = results.get('consensus_recommendations', [])
             
-            if not recommendations:
-                logger.warning("No recommendations to export")
-                return None
+            # Always create a workbook, even with zero recommendations
             
             # Create Excel writer
             with pd.ExcelWriter(filename, engine='openpyxl') as writer:
@@ -264,7 +264,7 @@ class AutomatedUltimateStrategyScheduler:
                         end_time.strftime('%Y-%m-%d'),
                         end_time.strftime('%H:%M:%S %Z'),
                         f"{(end_time - start_time).total_seconds() / 3600:.2f}",
-                        results.get('total_analyzed', 'N/A'),
+                        results.get('total_stocks_analyzed', results.get('requested_universe_count', 'N/A')),
                         len(recommendations),
                         len([r for r in recommendations if r.get('recommendation') == 'STRONG BUY']),
                         len([r for r in recommendations if r.get('recommendation') == 'BUY']),
@@ -276,37 +276,49 @@ class AutomatedUltimateStrategyScheduler:
                 info_df.to_excel(writer, sheet_name='Analysis_Info', index=False)
                 
                 # Sheet 2: Consensus Recommendations
-                if recommendations:
-                    recs_df = pd.DataFrame(recommendations)
-                    recs_df.to_excel(writer, sheet_name='Consensus_Recommendations', index=False)
+                try:
+                    if recommendations:
+                        recs_df = pd.DataFrame(recommendations)
+                        recs_df.to_excel(writer, sheet_name='Consensus_Recommendations', index=False)
+                except Exception:
+                    pass
                 
                 # Sheet 3: Market Analysis
-                market_data = results.get('market_analysis', {})
-                if market_data:
-                    market_df = pd.DataFrame([market_data])
-                    market_df.to_excel(writer, sheet_name='Market_Analysis', index=False)
+                try:
+                    market_data = results.get('market_analysis', {})
+                    if market_data:
+                        market_df = pd.DataFrame([market_data])
+                        market_df.to_excel(writer, sheet_name='Market_Analysis', index=False)
+                except Exception:
+                    pass
                 
                 # Sheet 4: Sector Analysis
-                sector_data = results.get('sector_analysis', {})
-                if sector_data:
-                    sector_df = pd.DataFrame([sector_data])
-                    sector_df.to_excel(writer, sheet_name='Sector_Analysis', index=False)
+                try:
+                    sector_data = results.get('sector_analysis', {})
+                    if sector_data:
+                        sector_df = pd.DataFrame([sector_data])
+                        sector_df.to_excel(writer, sheet_name='Sector_Analysis', index=False)
+                except Exception:
+                    pass
                 
                 # Sheet 5: Strategy Results Summary
-                strategy_results = results.get('strategy_results', {})
-                if strategy_results:
-                    strategy_summary = []
-                    for strategy_name, strategy_data in strategy_results.items():
-                        if isinstance(strategy_data, list):
-                            strategy_summary.append({
-                                'Strategy': strategy_name,
-                                'Total Stocks': len(strategy_data),
-                                'Strong Buy': len([s for s in strategy_data if s.get('recommendation') == 'STRONG BUY']),
-                                'Buy': len([s for s in strategy_data if s.get('recommendation') == 'BUY'])
-                            })
-                    if strategy_summary:
-                        strategy_df = pd.DataFrame(strategy_summary)
-                        strategy_df.to_excel(writer, sheet_name='Strategy_Summary', index=False)
+                try:
+                    strategy_results = results.get('strategy_results', {})
+                    if strategy_results:
+                        strategy_summary = []
+                        for strategy_name, strategy_data in strategy_results.items():
+                            if isinstance(strategy_data, list):
+                                strategy_summary.append({
+                                    'Strategy': strategy_name,
+                                    'Total Stocks': len(strategy_data),
+                                    'Strong Buy': len([s for s in strategy_data if s.get('recommendation') == 'STRONG BUY']),
+                                    'Buy': len([s for s in strategy_data if s.get('recommendation') == 'BUY'])
+                                })
+                        if strategy_summary:
+                            strategy_df = pd.DataFrame(strategy_summary)
+                            strategy_df.to_excel(writer, sheet_name='Strategy_Summary', index=False)
+                except Exception:
+                    pass
             
             logger.info(f"✅ Excel file created successfully: {filename}")
             return str(filename)

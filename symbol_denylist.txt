@@ -1,0 +1,7 @@
+# Optional symbol denylist
+# One symbol per line, case-insensitive. Lines starting with # are comments.
+# Use this to quickly exclude unexpected or undesirable symbols from analysis.
+# Example:
+# HILL
+# GOOG
+# PENNY

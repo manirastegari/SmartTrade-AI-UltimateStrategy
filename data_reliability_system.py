@@ -11,6 +11,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 import json
 import os
+from rate_limiter import limiter
 
 class DataReliabilityManager:
     """Manages data reliability with multiple failsafes"""
@@ -22,7 +23,6 @@ class DataReliabilityManager:
             'twelve_data',
             'alpha_vantage', 
             'finnhub',
-            'iex_cloud',
             'polygon'
         ]
         
@@ -61,7 +61,6 @@ class DataReliabilityManager:
             'twelve_data': self._check_twelve_data,
             'alpha_vantage': self._check_alpha_vantage,
             'finnhub': self._check_finnhub,
-            'iex_cloud': self._check_iex_cloud,
             'polygon': self._check_polygon
         }
         
@@ -106,6 +105,7 @@ class DataReliabilityManager:
                 'apikey': os.getenv('TWELVE_DATA_API_KEY', 'demo')
             }
             
+            limiter.acquire('TWELVEDATA')
             response = requests.get(url, params=params, timeout=10)
             
             if response.status_code == 200:
@@ -128,6 +128,7 @@ class DataReliabilityManager:
                 'outputsize': 'compact'
             }
             
+            limiter.acquire('ALPHA_VANTAGE')
             response = requests.get(url, params=params, timeout=10)
             
             if response.status_code == 200:
@@ -151,6 +152,7 @@ class DataReliabilityManager:
                 'token': os.getenv('FINNHUB_API_KEY', 'demo')
             }
             
+            limiter.acquire('FINNHUB')
             response = requests.get(url, params=params, timeout=10)
             
             if response.status_code == 200:
@@ -162,22 +164,7 @@ class DataReliabilityManager:
         except Exception:
             return False
     
-    def _check_iex_cloud(self) -> bool:
-        """Check IEX Cloud health"""
-        try:
-            url = "https://cloud.iexapis.com/stable/stock/AAPL/chart/1m"
-            params = {'token': os.getenv('IEX_CLOUD_API_KEY', 'pk_test_demo')}
-            
-            response = requests.get(url, params=params, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return isinstance(data, list) and len(data) > 0
-            
-            return False
-            
-        except Exception:
-            return False
+    # IEX Cloud removed from Ultimate Strategy path
     
     def _check_polygon(self) -> bool:
         """Check Polygon health"""
@@ -188,6 +175,7 @@ class DataReliabilityManager:
             url = f"https://api.polygon.io/v2/aggs/ticker/AAPL/range/1/day/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
             params = {'apikey': os.getenv('POLYGON_API_KEY', 'demo')}
             
+            limiter.acquire('POLYGON')
             response = requests.get(url, params=params, timeout=10)
             
             if response.status_code == 200:

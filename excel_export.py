@@ -10,7 +10,10 @@ from datetime import datetime
 import os
 
 def export_analysis_to_excel(results, analysis_params=None, filename=None):
-    """Export analysis results to Excel with multiple sheets"""
+    """Export analysis results to Excel with multiple sheets
+    
+    Optimized for Premium Quality Universe (614 institutional-grade stocks)
+    """
     
     if not results:
         return None, "No results to export"
@@ -18,7 +21,7 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None):
     # Generate filename if not provided
     if not filename:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"SmartTrade_Analysis_{timestamp}.xlsx"
+        filename = f"SmartTrade_Premium_Analysis_{timestamp}.xlsx"
     
     try:
         # Create Excel writer object
@@ -54,7 +57,7 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None):
         return None, f"Export failed: {str(e)}"
 
 def create_summary_sheet(results, writer, analysis_params):
-    """Create summary dashboard sheet"""
+    """Create summary dashboard sheet with premium universe information"""
     
     # Analysis summary
     total_stocks = len(results)
@@ -68,6 +71,7 @@ def create_summary_sheet(results, writer, analysis_params):
     summary_data = {
         'Metric': [
             'Analysis Date',
+            'Universe Type',
             'Total Stocks Analyzed',
             'Strong Buy Recommendations',
             'Buy Recommendations', 
@@ -77,10 +81,12 @@ def create_summary_sheet(results, writer, analysis_params):
             'Success Rate (%)',
             'Average Score',
             'Top Performer',
+            'Risk Management',
             'Analysis Parameters'
         ],
         'Value': [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'Premium Quality Universe (614 institutional-grade stocks)',
             total_stocks,
             strong_buy,
             buy,
@@ -90,7 +96,8 @@ def create_summary_sheet(results, writer, analysis_params):
             f"{(strong_buy + buy + weak_buy) / total_stocks * 100:.1f}%" if total_stocks > 0 else "0%",
             f"{np.mean([r.get('overall_score', 0) for r in results]):.1f}",
             max(results, key=lambda x: x.get('overall_score', 0)).get('symbol', 'N/A') if results else 'N/A',
-            str(analysis_params) if analysis_params else 'Standard Analysis'
+            'Guardrails: DISABLED (pre-screened) | Regime Filters: RELAXED',
+            str(analysis_params) if analysis_params else 'Ultimate Strategy 4-Perspective Consensus'
         ]
     }
     

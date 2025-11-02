@@ -27,8 +27,21 @@ class XAIClient:
 	"""Thin client for xAI Grok chat completions."""
 
 	def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, timeout: int = 60):
-		# Prefer environment variables, fallback to repo api_keys.py if present
+		# Best-effort: load .env if python-dotenv is available (dev convenience, safe for public repos)
+		try:
+			from dotenv import load_dotenv  # type: ignore
+			load_dotenv()
+		except Exception:
+			pass
+
+		# Prefer environment variables, then Streamlit secrets if available, then repo api_keys.py (env-only now)
 		key = api_key or os.getenv("XAI_API_KEY")
+		if not key:
+			try:
+				import streamlit as st  # type: ignore
+				key = st.secrets.get("XAI_API_KEY") if hasattr(st, "secrets") else None
+			except Exception:
+				key = None
 		if not key:
 			try:
 				from api_keys import XAI_API_KEY as KEY_FROM_REPO  # type: ignore

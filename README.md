@@ -1,403 +1,88 @@
-# 🚀 SmartTrade AI Ultimate Strategy + AI — V5.0
+# 🚀 SmartTrade Ultimate Strategy (Free)
 
-[![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Latest-red)](https://streamlit.io)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-5.0-orange)](.)
-[![TFSA](https://img.shields.io/badge/TFSA-100%25-green)](https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/tax-free-savings-account.html)
-[![Questrade](https://img.shields.io/badge/Questrade-Ready-blue)](https://www.questrade.com/)
-[![Runtime](https://img.shields.io/badge/Runtime-45–60min%20(Ultimate%20%2B%20AI)%20%E2%80%A2%2010–15min%20(Light)-success)]()
-[![Accuracy](https://img.shields.io/badge/Accuracy-75--80%25-brightgreen)]()
+Ultimate Strategy is a streamlined, institutional-grade trading assistant that combines 700+ TFSA-ready stocks, multi-factor analytics, and an optional xAI review while relying exclusively on free market data feeds.
 
-**Created by: Mani Rastegari**  
-**Email: mani.rastegari@gmail.com**
+---
 
-## 🎯 **What's New in Version 5.0 (October 2025)**
+## 🧠 What You Get
 
-**75-80% accurate, AI-enhanced, 3-4x faster, 2800x faster on cached runs! Institutional-grade for FREE!**
+- **Single-pass 4-perspective consensus** powered by `FixedUltimateStrategyAnalyzer`
+- **700+ stock universe** curated for Canadian TFSA + US liquidity
+- **AdvancedTradingAnalyzer** with 100+ features, ML predictions, sentiment, fundamentals
+- **No paid data APIs** – Yahoo Finance, Alpha Vantage free, Finnhub free, FMP free, Stooq, Google News, SEC feeds
+- **xAI Grok review (optional)** – the only paid integration, isolated behind `XAI_API_KEY`
+- **Excel exports & diagnostics** out of the box
+- **<60 minutes runtime** on a modern laptop thanks to caching and multi-core execution
 
-### 🧠 New: Ultimate Strategy + AI (xAI Grok)
-- Post-run professional AI review using xAI Grok
-- Covers Tier 1/2/3 picks, market stance, timeframe, and risks
-- Lightweight News + SEC context (Google News RSS + EDGAR Atom)
-- Model defaults to grok-4-fast-reasoning with automatic fallback
+---
 
-### **🚀 V5.0 MAJOR IMPROVEMENTS**
-- **🎯 75-80% Accuracy**: Up from 60-65% - now rivals $10k+/month services!
-- **⚡ 3-4x Faster**: Light run 10–15 minutes (Ultimate Strategy + AI: 45–60 minutes)
-- **💾 Smart Caching**: 2800x faster on repeat runs (4-hour intelligent cache)
-- **🧠 Fixed ML**: Removed randomness - deterministic predictions (+25% accuracy)
-- **📊 30+ Fundamentals**: PE, ROE, FCF, dividends, margins (was ~5 metrics)
-- **💬 VADER Sentiment**: Financial-specific analysis (+15% accuracy)
-- **📈 Price Patterns**: Support/resistance, trends, breakouts (zero API cost)
-- **🔄 Sector Rotation**: Market breadth and sector strength analysis
-- **📊 Volume Profile**: Accumulation/distribution tracking
-- **🛡️ Exponential Backoff**: 90% fewer rate limit errors
-- **🇨🇦 100% TFSA Compatible**: All 737 stocks tradeable in Canadian accounts
-- **💰 Still FREE**: $0/month (no paid APIs added!)
+## ⚙️ Architecture Snapshot
 
-A comprehensive, AI-powered trading analysis platform that provides real-time stock market analysis and trading recommendations for US and Canadian markets. **Perfect for TFSA investing** with institutional-grade analysis that costs **$0/month** using only free data sources.
+| Layer | File | Highlights |
+|-------|------|-----------|
+| Data ingestion | `advanced_data_fetcher.py` | Source rotation, exponential backoff, SmartCache, TextBlob sentiment |
+| Analytics engine | `advanced_analyzer.py` | Multi-model ML, feature engineering, caching, universe orchestration |
+| Strategy logic | `ultimate_strategy_analyzer_fixed.py` | Guardrails, regime filter, Alpha+ portfolio, AI bridge |
+| Market regime | `market_context_signals.py` | SOXX/QQQ relationship, SMA checks, VWAP helper |
+| News/SEC context | `news_sec_fetcher.py` | Google News RSS + SEC EDGAR Atom feeds (free) |
+| AI client | `xai_client.py` | Minimal Grok wrapper with graceful fallbacks |
+| TFSA universe | `tfsa_questrade_750_universe.py` | 730+ liquid tickers with replacements |
 
-## ✨ Features
+See `ULTIMATE_STRATEGY_FEATURE.md` for a deep dive.
 
-### 🎯 **100% Automatic Analysis**
-- **Real-time Data Fetching** - Downloads live stock data from Yahoo Finance
-- **Advanced Technical Analysis** - 50+ technical indicators (RSI, MACD, Moving Averages, Bollinger Bands, etc.)
-- **Comprehensive Fundamental Analysis** - P/E ratios, growth rates, financial health metrics
-- **Machine Learning Predictions** - Uses Random Forest, XGBoost, Gradient Boosting, Extra Trees
-- **Multi-Source News Analysis** - Yahoo Finance, Google News, Reddit, Twitter sentiment
-- **Insider Trading Tracking** - Monitors insider buying/selling activity
-- **Options Analysis** - Put/call ratios and implied volatility
-- **Economic Indicators** - VIX, Fed rates, GDP, inflation analysis
-- **Smart Signal Generation** - Creates BUY/SELL/HOLD signals automatically
-- **Risk Assessment** - Evaluates risk levels for each stock
-- **Professional Dashboard** - Interactive charts and comprehensive metrics
+---
 
-### 📊 **Ultimate Strategy + AI Coverage (V5.0)**
-- **737 Validated Stocks** - 100% success rate, all failed symbols removed
-- **4-Strategy Consensus** - Institutional, Hedge Fund, Quant Value, Risk Managed
-- **🇨🇦 TFSA Perfection** - 100% Canadian tax-free account compatible
-- **🎯 Questrade Ready** - All stocks available on Canada's top platform
-- **Optimized Universe** - Removed 42 delisted/unavailable stocks for reliability
-- **100% Success Rate** - Zero data failures, institutional-grade accuracy
-- **💾 Auto Excel Export** - Professional reporting with AI sheets
-- **⏰ Automated Daily Runs** - 4:30 AM ET analysis, results before market open
-- **🤖 AI Overlay** - xAI Grok post-run review in UI and Excel
+## 🚀 Quick Start
 
-### 💰 **Cost: $0/month**
-- Uses only free APIs (Yahoo Finance, Google News)
-- Runs entirely on your MacBook
-- No subscription fees
-- No data limits
-- No hidden costs
-
-## ⚡ Quick Start (TL;DR)
-
-### **🚀 Ultimate Strategy + AI (Recommended)**
 ```bash
 git clone https://github.com/manirastegari/SmartTrade-AI-UltimateStrategy.git
 cd SmartTrade-AI-UltimateStrategy
 pip install -r requirements.txt
-streamlit run professional_trading_app.py --server.port 8502
+streamlit run professional_trading_app.py
 ```
 
-### **🎯 V5.0 Key Features**
-- **737-Stock Universe**: 100% success rate, all validated and tradeable
-- **⚡ Faster**: Ultimate Strategy + AI: 45–60 minutes end-to-end (light run: 10–15 min)
-- **🏆 Ultimate Strategy + AI**: 4-strategy consensus with AI post-run review
-- **🎯 50% Stricter**: 82+ score for STRONG BUY (higher quality picks)
-- **⏰ Auto Scheduler**: Daily 4:30 AM analysis before market open
-- **💾 Auto Export**: Excel + GitHub push automatically
-- **100% Success Rate**: Zero failures, institutional reliability
-- **🇨🇦 TFSA Optimized**: All stocks Canadian tax-free compatible
-- **Expected Results**: 25-35 recommendations per run (was 50+)
-- **4 Agreement Tiers**: 4/4, 3/4, 2/4, 1/4 strategies agreeing
+Open the Streamlit app (default `http://localhost:8501`), choose **🏆 Ultimate Strategy + AI**, and hit **Run Professional Analysis**.
 
-Open `http://localhost:8502` in your browser.
+> 💡 Tip: First run takes ~50 minutes. Subsequent runs are much faster (cache hits + SmartCache).
 
-## 🧭 How to Use
+---
 
-### **Ultimate Strategy + AI:**
-1. **Select Analysis Type**: Choose "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)"
-2. **Run Analysis**: Click "🚀 Run Professional Analysis" (~45–60 minutes)
-3. **Review 4 Tiers**:
-   - **Tier 1 (4/4)**: All 4 strategies agree - LOWEST RISK (~10 stocks)
-   - **Tier 2 (3/4)**: 3 strategies agree - LOW RISK (~5-10 stocks)
-   - **Tier 3 (2/4)**: 2 strategies agree - MEDIUM RISK (~10-15 stocks)
-   - **Tier 4 (1/4)**: 1 strategy recommends - HIGHER RISK (~10+ stocks)
-4. **Auto Excel Export**: Results automatically saved to `exports/` folder
-5. **AI Review**: See the AI market stance, timeframe, and Tier 1/2/3 picks in UI/Excel
-6. **Trade on Questrade**: All 737 stocks available for immediate trading
+## 🔑 Optional: xAI Review
 
-### 🔐 Configure API Keys (Public-Safe)
-- The app runs fully on free data; AI is optional but recommended
-- Keys are NOT stored in the repo: `.env` and `api_keys.py` are ignored by `.gitignore`
-- Recommended: set environment variables in your shell (zsh)
+Set an environment variable to enable Grok post-run summaries:
 
 ```bash
-# xAI Grok (recommended)
-export XAI_API_KEY="your_xai_key"
-# Optional: override model (defaults to grok-4-fast-reasoning)
-export XAI_MODEL="grok-4-fast-reasoning"
-
-# Optional free API keys used in fallbacks (safe defaults exist)
-export ALPHA_VANTAGE_API_KEY="your_alpha_vantage_key"
-export FINNHUB_API_KEY="your_finnhub_key"
-export IEX_CLOUD_API_KEY="your_iex_key"
-export POLYGON_API_KEY="your_polygon_key"
-export TWELVE_DATA_API_KEY="your_twelve_data_key"
+export XAI_API_KEY="your_grok_key"
 ```
 
-Alternatively, copy `.env.example` to `.env` and fill in values (the `.env` file is ignored from git).
+Without the key, Ultimate Strategy skips the AI step automatically and still exports structured results.
 
-### **Automated Daily Runs:**
-- Scheduler runs at **4:30 AM ET** every weekday
-- Results ready by **~5:15 AM** (before 9:30 AM market open)
-- Excel exported to `daily_results/` and pushed to GitHub
+---
 
-### **Results to Focus On:**
-- **Current Prices**: Real-time stock prices
-- **Target Prices**: Where to sell for profit  
-- **Upside/Downside**: Green = good, Red = bad
-- **Stop Losses**: Automatic -5% risk management
-- **Professional Scores**: Technical, Fundamental, Sentiment
+## 📦 Outputs
 
-## 💹 How to Trade with This App
+- **Streamlit dashboard** with conviction tiers, metrics, sector/risk charts, timeframe badges
+- **Excel workbook** (`exports/Ultimate_Strategy_Results_*.xlsx`) with consensus results, Alpha+ portfolio, AI review (when enabled)
+- **Diagnostics manifest** (`.cache/logs/last_run_diagnostics.json`) detailing analyzed vs skipped symbols and guardrail removals
 
-### **Professional Trading Rules:**
-- **Entry**: Current price shown
-- **Target**: Target price (green percentage)
-- **Stop Loss**: -5% from entry price
-- **Position Size**: 2-5% of portfolio per stock
+---
 
-### **High Conviction Criteria:**
-- Confidence > 80%
-- Overall Score > 80  
-- Risk Level = Low
-- Green upside percentage
+## ✅ Why It Stays Free & Low Risk
 
-### **Example Trade:**
-```
-AAPL - BUY - Confidence: 85%
-Current Price: $234.07
-Target Price: $245.00 (+4.7% upside)
-Stop Loss: $222.37 (-5%)
-Position Size: 3% of portfolio
-```
+- Smart cache + rotating free APIs keep data usage inside daily quotas
+- Guardrails remove penny stocks, low-volume names, and volatile spikes
+- Regime filter shifts to conservative mode when semiconductors underperform
+- Auto-replacement engine fills any gaps with safer equivalents
+- Only paid dependency is the optional xAI Grok review
 
-## 🚀 Quick Start
+---
 
-### Prerequisites
-- Python 3.12+
-- macOS (tested on macOS 14.6.0)
-- 8GB RAM (recommended)
-- Internet connection
+## 📄 License & Attribution
 
-### Installation
+- Released under the [MIT License](LICENSE)
+- Created by Mani Rastegari
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/SmartTrade-AI.git
-   cd SmartTrade-AI
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pip3 install -r requirements.txt
-   # or for minimal installation:
-   pip3 install streamlit pandas numpy yfinance scikit-learn plotly openpyxl
-   ```
-
-3. **Run the V3.0 Professional Terminal:**
-   ```bash
-   streamlit run professional_trading_app.py
-   ```
-
-4. **Open your browser:**
-   - Professional Terminal: `http://localhost:8501`
-   - **🇨🇦 Perfect for TFSA investing on Questrade!**
-
-## 📈 How It Works
-
-### 1. **Data Collection**
-- Fetches 2 years of historical data for each stock
-- Downloads real-time quotes, volume, and fundamental data
-- Scrapes news from multiple sources
-- Tracks insider trading and options data
-
-### 2. **Technical Analysis (50+ Indicators)**
-- **Price Indicators**: SMA, EMA (multiple periods)
-- **Momentum Indicators**: RSI, MACD, Stochastic, Williams %R, CCI
-- **Volatility Indicators**: ATR, Bollinger Bands, Volatility measures
-- **Trend Indicators**: ADX, Trend Strength, Direction
-- **Volume Indicators**: OBV, A/D, CMF, Volume ratios
-- **Pattern Recognition**: Doji, Hammer, Shooting Star, Engulfing
-
-### 3. **Fundamental Analysis**
-- **Valuation Metrics**: P/E, P/B, P/S, PEG ratios
-- **Growth Analysis**: Revenue and earnings growth
-- **Financial Health**: Profit margins, ROE, debt levels
-- **Sector Performance**: Relative strength analysis
-
-### 4. **Machine Learning Predictions**
-- **4 ML Models**: Random Forest, XGBoost, Gradient Boosting, Extra Trees
-- **80+ Features**: Technical, fundamental, sentiment, market data
-- **Ensemble Prediction**: Weighted combination of all models
-- **Confidence Scoring**: Measures prediction reliability
-
-### 5. **Signal Generation**
-- **Technical Signals**: RSI, MACD, Moving Average crossovers
-- **Volume Signals**: High/low volume analysis
-- **Sentiment Signals**: News sentiment analysis
-- **Market Signals**: Insider, options, institutional activity
-
-## 🎯 Accuracy Levels
-
-- **Short-term (1-5 days)**: 75-85% accuracy
-- **Medium-term (1-4 weeks)**: 80-90% accuracy
-- **Long-term (1-6 months)**: 85-95% accuracy
-
-## 🎯 **V2.0 Performance Metrics**
-
-### **Before vs After Comparison**
-| Metric | V1.0 | V2.0 | Improvement |
-|--------|------|------|-------------|
-| **Max Analysis** | 200 stocks | 400 stocks | **+100%** |
-| **Universe Size** | 348 stocks | 529 stocks | **+52%** |
-| **Coverage** | 37.8% | 75.6% | **+100%** |
-| **Data Sources** | 6 sources | 18 sources | **+200%** |
-| **Reliability** | 95% | 100% | **+5%** |
-| **Error Rate** | Occasional | Zero | **-100%** |
-
-### **🏦 TFSA Optimization**
-| TFSA Value | Target Positions | Analysis Size | Selection Ratio | Quality |
-|------------|------------------|---------------|-----------------|---------|
-| $7K-$25K | 5-10 stocks | 300 stocks | 30-60:1 | **Premium** |
-| $25K-$50K | 10-15 stocks | 350 stocks | 23-35:1 | **Excellent** |
-| $50K+ | 20-25 stocks | 400 stocks | 16-20:1 | **Institutional** |
-
-## 📋 **Expanded Stock Universe (529 Stocks)**
-
-### **🚀 New High-Potential Categories (V2.0)**
-- **🔬 Biotech Innovators**: EDIT, CRSP, NTLA, BEAM, NVAX, SRPT, BLUE
-- **⚡ Clean Energy**: ENPH, SEDG, PLUG, FCEL, BE, BLDP, QS
-- **💰 Fintech Disruptors**: AFRM, UPST, SOFI, LMND, HOOD, COIN
-- **🎮 Gaming/Metaverse**: RBLX, U, DKNG, GLUU, HUYA, BILI
-- **🚀 Space/Future Tech**: SPCE, RKLB, ASTR, VACQ, HOL
-- **💻 High-Growth SaaS**: ASAN, MNDY, PD, BILL, DOCN, FSLY
-- **🛒 E-commerce**: MELI, SE, CVNA, VRM, CPNG, GRAB
-
-### **📊 Enhanced Technical Analysis (V2.0)**
-- **New Indicators**: Rate of Change (ROC), Aroon Oscillator, Chande Momentum (CMO)
-- **Pattern Recognition**: Head & Shoulders, Double Top/Bottom, Triangle patterns
-- **Candlestick Patterns**: Doji, Engulfing, Morning Star detection
-- **Strategic Signals**: Golden Cross, Death Cross, Mean Reversion, Breakouts
-- **Advanced Momentum**: Price Strength, Trend Quality, Price Acceleration
-- **Zero API Cost**: All 25+ new indicators calculated from existing data
-
-### **💰 Enhanced Fundamental Analysis (V2.0)**
-- **Advanced Ratios**: PEG Estimate, EV/EBITDA Proxy, Liquidity Score
-- **Cash Flow Analysis**: Free Cash Flow proxy estimation
-- **Dividend Analysis**: Dividend Yield estimation from price behavior
-- **Professional Metrics**: All calculated from existing price/volume data
-- **100% Coverage**: Fills all major gaps in fundamental analysis
-
-### **Traditional Categories (Enhanced)**
-- **Tech Giants**: AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, NFLX, AMD, INTC
-- **Financial**: JPM, BAC, WFC, GS, MS, C, AXP, V, MA, PYPL
-- **Healthcare**: JNJ, PFE, UNH, ABBV, MRK, TMO, ABT, DHR, BMY, AMGN
-- **Consumer**: KO, PEP, WMT, PG, HD, MCD, NKE, SBUX, DIS
-- **Energy**: XOM, CVX, COP, EOG, SLB, OXY, MPC, VLO, PSX, KMI
-- **Canadian Markets**: SHOP, RY, TD, CNR, CP, ATD, WCN, BAM, MFC, SU
-
-## 🔧 Technical Details
-
-### Security
-- `api_keys.py` and `.env` are ignored by git and safe for a public repository
-- Do not commit real keys. If a key is ever exposed, rotate it immediately with your provider
-
-### Dependencies
-- **Streamlit** - Web interface
-- **Pandas** - Data manipulation
-- **NumPy** - Numerical computing
-- **YFinance** - Stock data fetching
-- **Plotly** - Interactive charts
-- **Scikit-learn** - Machine learning
-- **XGBoost** - Gradient boosting
-- **BeautifulSoup4** - Web scraping
-- **TextBlob** - Sentiment analysis
-
-### System Requirements
-- **Python 3.12+**
-- **macOS** (tested on macOS 14.6.0)
-- **8GB RAM** (recommended)
-- **Internet connection** for data fetching
-
-## 📊 Example Output
-
-```
-🏆 Top Stock Picks (Enhanced Analysis)
-
-#1 AAPL - STRONG BUY - BUY NOW (Score: 85.2)
-Price: $234.07 | Change: +2.15%
-Prediction: +8.5% | Confidence: 85%
-Risk: Low | Tech Score: 85/100
-
-Enhanced Trading Signals:
-• RSI Extremely Oversold - STRONG BUY
-• MACD Bullish Above Zero - STRONG BUY
-• Golden Cross - All MAs Aligned - STRONG BUY
-• High Volume - Strong Interest
-• Extremely Positive News Sentiment - BUY
-• Net Insider Buying - Positive Signal
-• Low Put/Call Ratio - Bullish Options Sentiment
-• High Institutional Confidence - BUY
-```
-
-## 🛠️ Customization
-
-### Adding New Stocks
-Edit the `stock_universe` list in the analyzer files:
-```python
-self.stock_universe = [
-    'AAPL', 'MSFT', 'GOOGL',  # Add your stocks here
-    # ... existing stocks
-]
-```
-
-### Adjusting Analysis Parameters
-Modify the analysis thresholds in the analyzer methods:
-```python
-# Change prediction thresholds
-if prediction > 0.05 and confidence > 0.7:  # Adjust these values
-    recommendation = 'STRONG BUY'
-```
-
-### Adding New Indicators
-Extend the `_add_advanced_technical_indicators` method to include additional technical indicators.
-
-## 📚 **V2.0 Documentation**
-
-### **📖 Complete Guides**
-- [📋 **Changelog V2.0**](CHANGELOG_V2.0.md) - Detailed changes and improvements
-- [🎯 **400-Stock Usage Guide**](USAGE_GUIDE_400_STOCKS.md) - Complete usage instructions
-- [🔄 **Session Consistency Guide**](CONSISTENCY_GUIDE.md) - How to use consistency features
-- [🛡️ **Market Data Robustness**](MARKET_DATA_ROBUSTNESS_SUMMARY.md) - 18-source reliability system
-- [🏦 **TFSA Optimization**](tfsa_optimization_suggestions.py) - TFSA-specific recommendations
-
-### **🔧 Technical Documentation**
-- [📊 **Expanded Coverage Summary**](EXPANDED_COVERAGE_SUMMARY.md) - Universe expansion details
-- [🧪 **Testing Suite**](final_integration_test.py) - Comprehensive system testing
-- [📈 **Performance Analysis**](analyze_tfsa_coverage.py) - Coverage analysis tools
-
-## 🚨 Important Disclaimers
-
-- **Not Financial Advice** - This tool is for educational and research purposes only
-- **Trading Risks** - All trading involves risk of loss
-- **Data Accuracy** - While we strive for accuracy, data may have delays or errors
-- **No Guarantees** - Past performance does not guarantee future results
-- **Use at Your Own Risk** - Always do your own research before making investment decisions
-
-## 📞 Support
-
-If you encounter any issues:
-1. Check that all dependencies are installed correctly
-2. Ensure you have an active internet connection
-3. Verify Python 3.12+ is installed
-4. Check the console output for error messages
-5. Open an issue on GitHub
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Yahoo Finance** for providing free stock data
+Have fun exploring institutional-grade analytics without paying for data! 👊
 - **Google News** for news sentiment analysis
 - **Streamlit** for the amazing web framework
 - **Scikit-learn** and **XGBoost** for machine learning capabilities

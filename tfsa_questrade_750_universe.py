@@ -17,8 +17,8 @@ TFSA_QUESTRADE_UNIVERSE = {
     # Stable tech giants + proven growth
     # ========================================================================
     'large_cap_tech': [
-        # Mega Cap Tech (Top 20)
-        'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'GOOG', 'AMZN', 'META', 'TSLA',
+    # Mega Cap Tech (Top 20)
+    'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA',
         'AVGO', 'ORCL', 'ADBE', 'CRM', 'INTU', 'AMD', 'IBM', 'QCOM',
         'NOW', 'ACN', 'CSCO', 'TXN',
         
