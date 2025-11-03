@@ -61,6 +61,54 @@ class PremiumStockAnalyzer:
                 hist_data = stock_data.get('hist')
                 info = stock_data.get('info', {})
             
+            # CRITICAL FIX: If info is empty (market_cap=0), try direct yfinance as fallback
+            if not info or info.get('marketCap', 0) == 0:
+                try:
+                    import yfinance as yf
+                    import time
+                    import random
+                    
+                    # Aggressive rate limiting to avoid 429 errors
+                    delay = random.uniform(1.0, 2.0)  # Random delay 1-2 seconds
+                    time.sleep(delay)
+                    
+                    ticker = yf.Ticker(symbol)
+                    
+                    # Try with retry logic
+                    max_retries = 2
+                    for attempt in range(max_retries):
+                        try:
+                            raw_info = ticker.info
+                            if raw_info and raw_info.get('marketCap', 0) > 0:
+                                # Map yfinance fields to our format
+                                info = {
+                                    'marketCap': raw_info.get('marketCap', 0),
+                                    'trailingPE': raw_info.get('trailingPE', 0),
+                                    'forwardPE': raw_info.get('forwardPE', 0),
+                                    'sector': raw_info.get('sector', 'Unknown'),
+                                    'beta': raw_info.get('beta', 1.0),
+                                    'debtToEquity': raw_info.get('debtToEquity', 0),
+                                    'priceToBook': raw_info.get('priceToBook', 0),
+                                    'dividendYield': raw_info.get('dividendYield', 0),
+                                    'profitMargins': raw_info.get('profitMargins', 0),
+                                    'revenueGrowth': raw_info.get('revenueGrowth', 0),
+                                    'returnOnEquity': raw_info.get('returnOnEquity', 0),
+                                }
+                                break  # Success
+                        except Exception as retry_e:
+                            if '429' in str(retry_e) and attempt < max_retries - 1:
+                                # Rate limited - wait longer
+                                wait_time = (attempt + 1) * 5  # 5, 10 seconds
+                                time.sleep(wait_time)
+                            else:
+                                raise  # Give up
+                except Exception as e:
+                    # If even direct fetch fails, skip this stock silently
+                    # (Don't return error - just skip in batch analysis)
+                    if '429' not in str(e):
+                        print(f"⚠️ {symbol}: Fundamental data error ({e})")
+                    return None  # Return None instead of error result
+            
             # Calculate all 15 metrics
             fundamentals = self._calculate_fundamentals(info, hist_data)
             momentum = self._calculate_momentum(hist_data, symbol)
