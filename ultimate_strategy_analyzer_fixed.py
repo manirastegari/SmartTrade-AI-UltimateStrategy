@@ -30,13 +30,21 @@ class FixedUltimateStrategyAnalyzer:
     
     def __init__(self, analyzer):
         """
-        Initialize with the main AdvancedTradingAnalyzer instance
+        Initialize with the main AdvancedTradingAnalyzer instance OR AdvancedDataFetcher
         
         Args:
-            analyzer: AdvancedTradingAnalyzer instance (for data fetching)
+            analyzer: AdvancedTradingAnalyzer instance OR AdvancedDataFetcher instance
         """
-        self.analyzer = analyzer
-        self.premium_analyzer = PremiumStockAnalyzer(data_fetcher=analyzer.data_fetcher)
+        # Support both direct data fetcher and full analyzer
+        if hasattr(analyzer, 'data_fetcher'):
+            # Full analyzer passed
+            self.analyzer = analyzer
+            self.premium_analyzer = PremiumStockAnalyzer(data_fetcher=analyzer.data_fetcher)
+        else:
+            # Direct data fetcher passed - create wrapper
+            self.analyzer = type('obj', (object,), {'data_fetcher': analyzer})()
+            self.premium_analyzer = PremiumStockAnalyzer(data_fetcher=analyzer)
+        
         self.base_results = {}  # Store quality analysis
         self.strategy_results = {}
         self.consensus_recommendations = []
@@ -181,9 +189,14 @@ class FixedUltimateStrategyAnalyzer:
                     pct = int(15 + (idx / total * 55))  # 15% to 70%
                     progress_callback(f"Analyzing {symbol} ({idx}/{total})...", pct)
                 
-                # Get historical data from analyzer's cache
-                hist_data = self.analyzer.data_fetcher.get_price_data(symbol, period='1y')
-                info = self.analyzer.data_fetcher.get_fundamental_data(symbol)
+                # Get comprehensive data from analyzer's data fetcher
+                stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
+                
+                if not stock_data or 'hist' not in stock_data:
+                    continue
+                
+                hist_data = stock_data.get('hist')
+                info = stock_data.get('info', {})
                 
                 # Run quality analysis
                 quality_result = self.premium_analyzer.analyze_stock(

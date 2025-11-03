@@ -42,36 +42,26 @@ class PremiumStockAnalyzer:
     def analyze_stock(self, symbol: str, hist_data: Optional[pd.DataFrame] = None, 
                      info: Optional[Dict] = None) -> Dict:
         """
-        Analyze a single stock using 15 key quality metrics
+        Analyze a single stock using 15 premium quality metrics.
         
         Args:
-            symbol: Stock symbol
-            hist_data: Optional pre-fetched historical data
-            info: Optional pre-fetched company info
-        
-        Returns comprehensive quality score and breakdown
+            symbol: Stock ticker
+            hist_data: Historical price data (pandas DataFrame)
+            info: Fundamental data (dict)
+            
+        Returns:
+            dict with quality score, metrics, tier classification
         """
         try:
-            # Use provided data or fetch if needed
+            # If data not provided, fetch it
             if hist_data is None or info is None:
-                if self.data_fetcher:
-                    # Use existing data fetcher with caching
-                    hist_data = self.data_fetcher.get_price_data(symbol, period='1y')
-                    info_data = self.data_fetcher.get_fundamental_data(symbol)
-                    if info is None:
-                        info = info_data
-                else:
-                    # Fallback to direct yfinance
-                    ticker = yf.Ticker(symbol)
-                    if hist_data is None:
-                        hist_data = ticker.history(period='1y')
-                    if info is None:
-                        info = ticker.info
-                
-                if hist_data is None or hist_data.empty:
-                    return self._empty_result(symbol, "No historical data")
+                stock_data = self.data_fetcher.get_comprehensive_stock_data(symbol)
+                if not stock_data or 'hist' not in stock_data:
+                    return None
+                hist_data = stock_data.get('hist')
+                info = stock_data.get('info', {})
             
-            # Calculate 15 key metrics
+            # Calculate all 15 metrics
             fundamentals = self._calculate_fundamentals(info, hist_data)
             momentum = self._calculate_momentum(hist_data, symbol)
             risk = self._calculate_risk(hist_data, info)
