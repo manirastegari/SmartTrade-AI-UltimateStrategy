@@ -8,8 +8,48 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import os
+import subprocess
 
-def export_analysis_to_excel(results, analysis_params=None, filename=None):
+def push_to_github(filename):
+    """
+    Automatically commit and push Excel results to GitHub
+    
+    Args:
+        filename: The Excel file to commit
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get the directory of the Excel file
+        file_dir = os.path.dirname(os.path.abspath(filename)) if os.path.dirname(filename) else os.getcwd()
+        file_name = os.path.basename(filename)
+        
+        # Git add the file
+        subprocess.run(['git', 'add', file_name], cwd=file_dir, check=True, capture_output=True)
+        
+        # Git commit
+        commit_message = f"Auto-export: {file_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        subprocess.run(['git', 'commit', '-m', commit_message], cwd=file_dir, check=True, capture_output=True)
+        
+        # Git push
+        subprocess.run(['git', 'push'], cwd=file_dir, check=True, capture_output=True)
+        
+        print(f"✅ Successfully pushed {file_name} to GitHub")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        # Git command failed - might be nothing to commit or network issue
+        if b'nothing to commit' in e.stderr or b'nothing added to commit' in e.stderr:
+            print(f"⚠️ No changes to commit for {filename}")
+        else:
+            print(f"⚠️ Git push failed: {e.stderr.decode() if e.stderr else str(e)}")
+        return False
+    except Exception as e:
+        print(f"⚠️ Git push error: {str(e)}")
+        return False
+
+def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=True):
     """Export analysis results to Excel with multiple sheets
     
     Optimized for Premium Quality Universe (614 institutional-grade stocks)
@@ -50,6 +90,10 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None):
             
             # Sheet 8: Performance Metrics
             create_performance_sheet(results, writer)
+        
+        # Auto-push to GitHub if requested
+        if auto_push_github:
+            push_to_github(filename)
         
         return filename, f"Successfully exported {len(results)} stocks to {filename}"
         
