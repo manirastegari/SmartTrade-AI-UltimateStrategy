@@ -68,8 +68,8 @@ class PremiumStockAnalyzer:
                     import time
                     import random
                     
-                    # VERY AGGRESSIVE rate limiting to avoid 429 errors (Yahoo blocked you!)
-                    delay = random.uniform(2.5, 4.0)  # Random delay 2.5-4 seconds per stock
+                    # Balanced rate limiting - fast enough but avoids 429 blocks
+                    delay = random.uniform(0.5, 1.2)  # Random delay 0.5-1.2 seconds per stock
                     time.sleep(delay)
                     
                     ticker = yf.Ticker(symbol)
@@ -97,8 +97,8 @@ class PremiumStockAnalyzer:
                                 break  # Success
                         except Exception as retry_e:
                             if '429' in str(retry_e) and attempt < max_retries - 1:
-                                # Rate limited - wait much longer
-                                wait_time = (attempt + 1) * 10  # 10, 20 seconds
+                                # Rate limited - exponential backoff
+                                wait_time = (attempt + 1) * 3  # 3, 6 seconds
                                 print(f"⚠️ {symbol}: Rate limited, waiting {wait_time}s...")
                                 time.sleep(wait_time)
                             else:

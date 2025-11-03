@@ -122,9 +122,9 @@ class AdvancedDataFetcher:
         self._market_context_cache = None
         self._market_context_ts = None
         
-        # Rate limiting protection (INCREASED to prevent 429 errors)
+        # Rate limiting protection (BALANCED - avoid 429 but not too slow)
         self._last_yfinance_call = 0
-        self._yfinance_delay = 1.5  # 1.5 seconds between calls (was 0.3) - Yahoo blocked you!
+        self._yfinance_delay = 0.8  # 0.8 seconds between calls - good balance
 
         # Track failures for the last run (symbols that could not be fetched)
         # Each item: { 'symbol': str, 'reason': str }
