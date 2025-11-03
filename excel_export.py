@@ -59,53 +59,104 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None):
 def create_summary_sheet(results, writer, analysis_params):
     """Create summary dashboard sheet with premium universe information"""
     
-    # Analysis summary
-    total_stocks = len(results)
-    strong_buy = len([r for r in results if r.get('recommendation') == 'STRONG BUY'])
-    buy = len([r for r in results if r.get('recommendation') == 'BUY'])
-    weak_buy = len([r for r in results if r.get('recommendation') == 'WEAK BUY'])
-    hold = len([r for r in results if r.get('recommendation') == 'HOLD'])
-    sell_signals = len([r for r in results if r.get('recommendation', '').endswith('SELL')])
+    # Check if this is consensus format
+    is_consensus = isinstance(results, list) and results and 'strategies_agreeing' in results[0]
     
-    # Create summary data
-    summary_data = {
-        'Metric': [
-            'Analysis Date',
-            'Universe Type',
-            'Total Stocks Analyzed',
-            'Strong Buy Recommendations',
-            'Buy Recommendations', 
-            'Weak Buy Recommendations',
-            'Hold Recommendations',
-            'Sell Signals',
-            'Success Rate (%)',
-            'Average Score',
-            'Top Performer',
-            'Risk Management',
-            'Analysis Parameters'
-        ],
-        'Value': [
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'Premium Quality Universe (614 institutional-grade stocks)',
-            total_stocks,
-            strong_buy,
-            buy,
-            weak_buy,
-            hold,
-            sell_signals,
-            f"{(strong_buy + buy + weak_buy) / total_stocks * 100:.1f}%" if total_stocks > 0 else "0%",
-            f"{np.mean([r.get('overall_score', 0) for r in results]):.1f}",
-            max(results, key=lambda x: x.get('overall_score', 0)).get('symbol', 'N/A') if results else 'N/A',
-            'Guardrails: DISABLED (pre-screened) | Regime Filters: RELAXED',
-            str(analysis_params) if analysis_params else 'Ultimate Strategy 4-Perspective Consensus'
-        ]
-    }
+    if is_consensus:
+        # New consensus format
+        total_stocks = len(results)
+        strong_buy = len([r for r in results if r.get('recommendation') == 'STRONG BUY'])
+        buy = len([r for r in results if r.get('recommendation') == 'BUY'])
+        weak_buy = len([r for r in results if r.get('recommendation') == 'WEAK BUY'])
+        hold = len([r for r in results if r.get('recommendation') == 'HOLD'])
+        sell_signals = 0  # Not used in consensus
+        
+        # Consensus-specific stats
+        tier_4 = len([r for r in results if r.get('strategies_agreeing') == 4])
+        tier_3 = len([r for r in results if r.get('strategies_agreeing') == 3])
+        tier_2 = len([r for r in results if r.get('strategies_agreeing') == 2])
+        
+        avg_quality = np.mean([r.get('quality_score', 0) for r in results]) if results else 0
+        top_performer = max(results, key=lambda x: x.get('quality_score', 0)).get('symbol', 'N/A') if results else 'N/A'
+        
+        # Create consensus summary
+        summary_data = {
+            'Metric': [
+                'Analysis Date',
+                'Analysis Type',
+                'Universe Type',
+                'Total Stocks Analyzed',
+                '4/4 Agreement (STRONG BUY)',
+                '3/4 Agreement (BUY)',
+                '2/4 Agreement (WEAK BUY)',
+                'Average Quality Score',
+                'Top Performer',
+                'Methodology',
+                'Risk Management',
+                'Analysis Parameters'
+            ],
+            'Value': [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'Premium Ultimate Strategy - 4-Perspective Consensus',
+                'Premium Quality Universe (614 institutional-grade stocks)',
+                total_stocks,
+                f"{tier_4} stocks (all perspectives agree)",
+                f"{tier_3} stocks (strong majority)",
+                f"{tier_2} stocks (split decision)",
+                f"{avg_quality:.1f}/100",
+                f"{top_performer} ({max([r.get('quality_score', 0) for r in results]):.0f}/100)" if results else 'N/A',
+                '15 Quality Metrics: Fundamentals 40%, Momentum 30%, Risk 20%, Sentiment 10%',
+                'Guardrails: DISABLED (pre-screened) | Regime Filters: RELAXED',
+                str(analysis_params) if analysis_params else 'Premium Ultimate Strategy - 4-Perspective Consensus'
+            ]
+        }
+    else:
+        # Old format
+        total_stocks = len(results)
+        strong_buy = len([r for r in results if r.get('recommendation') == 'STRONG BUY'])
+        buy = len([r for r in results if r.get('recommendation') == 'BUY'])
+        weak_buy = len([r for r in results if r.get('recommendation') == 'WEAK BUY'])
+        hold = len([r for r in results if r.get('recommendation') == 'HOLD'])
+        sell_signals = len([r for r in results if r.get('recommendation', '').endswith('SELL')])
+        
+        summary_data = {
+            'Metric': [
+                'Analysis Date',
+                'Universe Type',
+                'Total Stocks Analyzed',
+                'Strong Buy Recommendations',
+                'Buy Recommendations', 
+                'Weak Buy Recommendations',
+                'Hold Recommendations',
+                'Sell Signals',
+                'Success Rate (%)',
+                'Average Score',
+                'Top Performer',
+                'Risk Management',
+                'Analysis Parameters'
+            ],
+            'Value': [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'Premium Quality Universe (614 institutional-grade stocks)',
+                total_stocks,
+                strong_buy,
+                buy,
+                weak_buy,
+                hold,
+                sell_signals,
+                f"{(strong_buy + buy + weak_buy) / total_stocks * 100:.1f}%" if total_stocks > 0 else "0%",
+                f"{np.mean([r.get('overall_score', 0) for r in results]):.1f}",
+                max(results, key=lambda x: x.get('overall_score', 0)).get('symbol', 'N/A') if results else 'N/A',
+                'Guardrails: DISABLED (pre-screened) | Regime Filters: RELAXED',
+                str(analysis_params) if analysis_params else 'Ultimate Strategy 4-Perspective Consensus'
+            ]
+        }
     
     summary_df = pd.DataFrame(summary_data)
     summary_df.to_excel(writer, sheet_name='Summary', index=False)
 
 def create_recommendations_sheet(results, writer, recommendation_types, sheet_name=None):
-    """Create recommendations sheet"""
+    """Create recommendations sheet (supports both old and new consensus format)"""
     
     if isinstance(recommendation_types, str):
         recommendation_types = [recommendation_types]
@@ -122,28 +173,63 @@ def create_recommendations_sheet(results, writer, recommendation_types, sheet_na
         empty_df.to_excel(writer, sheet_name=sheet_name, index=False)
         return
     
-    # Create recommendations data
+    # Create recommendations data (handle both old and new consensus formats)
     recommendations_data = []
     for result in filtered_results:
-        recommendations_data.append({
-            'Symbol': result.get('symbol', ''),
-            'Company': result.get('company_name', ''),
-            'Recommendation': result.get('recommendation', ''),
-            'Current Price': f"${result.get('current_price', 0):.2f}",
-            'Predicted Return': f"{result.get('prediction', 0) * 100:.1f}%",
-            'Overall Score': result.get('overall_score', 0),
-            'Technical Score': result.get('technical_score', 0),
-            'Fundamental Score': result.get('fundamental_score', 0),
-            'Risk Level': result.get('risk_level', ''),
-            'Sector': result.get('sector', ''),
-            'Market Cap': result.get('market_cap', 0),
-            'Volume': result.get('volume', 0),
-            'P/E Ratio': result.get('pe_ratio', 0),
-            'Confidence': f"{result.get('confidence', 0) * 100:.1f}%"
-        })
+        # Check if this is consensus format (has strategies_agreeing)
+        is_consensus = 'strategies_agreeing' in result
+        
+        if is_consensus:
+            # New Premium Ultimate Strategy format
+            fund = result.get('fundamentals', {})
+            mom = result.get('momentum', {})
+            risk = result.get('risk', {})
+            sent = result.get('sentiment', {})
+            
+            recommendations_data.append({
+                'Symbol': result.get('symbol', ''),
+                'Recommendation': result.get('recommendation', ''),
+                'Agreement': f"{result.get('strategies_agreeing', 0)}/4",
+                'Quality Score': result.get('quality_score', 0),
+                'Consensus Score': result.get('consensus_score', 0),
+                'Confidence': f"{result.get('confidence', 0) * 100:.0f}%",
+                'Current Price': f"${result.get('current_price', 0):.2f}",
+                'Fundamentals': f"{fund.get('grade', 'N/A')} ({fund.get('score', 0):.0f})",
+                'Momentum': f"{mom.get('grade', 'N/A')} ({mom.get('score', 0):.0f})",
+                'Risk': f"{risk.get('grade', 'N/A')} ({risk.get('score', 0):.0f})",
+                'Sentiment': f"{sent.get('grade', 'N/A')} ({sent.get('score', 0):.0f})",
+                'Perspectives': ', '.join(result.get('agreeing_perspectives', [])),
+                'P/E Ratio': fund.get('pe_ratio', 'N/A'),
+                'Revenue Growth': f"{fund.get('revenue_growth', 0)*100:.1f}%" if fund.get('revenue_growth') else 'N/A',
+                'Beta': risk.get('beta', 'N/A')
+            })
+        else:
+            # Old format
+            recommendations_data.append({
+                'Symbol': result.get('symbol', ''),
+                'Company': result.get('company_name', ''),
+                'Recommendation': result.get('recommendation', ''),
+                'Current Price': f"${result.get('current_price', 0):.2f}",
+                'Predicted Return': f"{result.get('prediction', 0) * 100:.1f}%",
+                'Overall Score': result.get('overall_score', 0),
+                'Technical Score': result.get('technical_score', 0),
+                'Fundamental Score': result.get('fundamental_score', 0),
+                'Risk Level': result.get('risk_level', ''),
+                'Sector': result.get('sector', ''),
+                'Market Cap': result.get('market_cap', 0),
+                'Volume': result.get('volume', 0),
+                'P/E Ratio': result.get('pe_ratio', 0),
+                'Confidence': f"{result.get('confidence', 0) * 100:.1f}%"
+            })
     
     recommendations_df = pd.DataFrame(recommendations_data)
-    recommendations_df = recommendations_df.sort_values('Overall Score', ascending=False)
+    
+    # Sort by appropriate column
+    if recommendations_data and 'Quality Score' in recommendations_data[0]:
+        recommendations_df = recommendations_df.sort_values('Quality Score', ascending=False)
+    elif 'Overall Score' in recommendations_df.columns:
+        recommendations_df = recommendations_df.sort_values('Overall Score', ascending=False)
+    
     recommendations_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
 def create_detailed_analysis_sheet(results, writer):

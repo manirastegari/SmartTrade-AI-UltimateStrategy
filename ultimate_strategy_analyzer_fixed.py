@@ -748,6 +748,152 @@ Keep response focused and actionable for conservative investors.
             'analysis_type': 'PREMIUM_QUALITY_CONSENSUS',
             'error': 'No results generated'
         }
+    
+    def display_ultimate_strategy_results(self, results: Dict):
+        """
+        Display Premium Ultimate Strategy results in Streamlit UI
+        
+        Shows:
+        - Market analysis summary
+        - Consensus recommendations by tier (4/4, 3/4, 2/4)
+        - Quality breakdowns
+        - AI insights (if available)
+        """
+        
+        if not results or not results.get('consensus_recommendations'):
+            st.error("❌ No consensus recommendations found!")
+            return
+        
+        consensus = results['consensus_recommendations']
+        market = results.get('market_analysis', {})
+        ai_insights = results.get('ai_insights', {})
+        
+        # Header
+        st.markdown("---")
+        st.markdown("## 🎯 Premium Ultimate Strategy Results")
+        st.markdown(f"**Analysis Type**: {results.get('metrics_used', '15 Quality Metrics')}")
+        st.markdown(f"**Analysis Date**: {results.get('analysis_date', 'N/A')}")
+        
+        # Market Overview
+        st.markdown("### 📊 Market Context")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            regime = market.get('regime', 'Unknown').upper()
+            regime_color = '🟢' if regime == 'NORMAL' else '🟡' if regime == 'CAUTION' else '🔴'
+            st.metric("Market Regime", f"{regime_color} {regime}")
+        with col2:
+            vix = market.get('vix', 'N/A')
+            st.metric("VIX", vix)
+        with col3:
+            trend = market.get('trend', 'Unknown')
+            st.metric("Market Trend", trend)
+        
+        # Consensus Summary
+        st.markdown("### 🏆 Consensus Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Analyzed", results.get('total_stocks_analyzed', 0))
+        with col2:
+            count_4 = results.get('stocks_4_of_4', 0)
+            st.metric("4/4 Agreement", count_4, help="STRONG BUY - All perspectives agree")
+        with col3:
+            count_3 = results.get('stocks_3_of_4', 0)
+            st.metric("3/4 Agreement", count_3, help="BUY - Strong majority")
+        with col4:
+            count_2 = results.get('stocks_2_of_4', 0)
+            st.metric("2/4 Agreement", count_2, help="WEAK BUY - Split decision")
+        
+        # AI Insights (if available)
+        if ai_insights.get('available'):
+            st.markdown("### 🤖 AI Market Analysis")
+            
+            if ai_insights.get('market_overview'):
+                st.markdown("**Market Overview:**")
+                st.info(ai_insights['market_overview'])
+            
+            if ai_insights.get('top_picks_analysis'):
+                st.markdown("**Top Picks Analysis:**")
+                st.success(ai_insights['top_picks_analysis'])
+            
+            if ai_insights.get('risk_assessment'):
+                st.markdown("**Risk Assessment:**")
+                st.warning(ai_insights['risk_assessment'])
+            
+            if ai_insights.get('entry_timing'):
+                st.markdown("**Entry Timing:**")
+                st.info(ai_insights['entry_timing'])
+        
+        # 4/4 Agreement (STRONG BUY)
+        tier_4 = [p for p in consensus if p['strategies_agreeing'] == 4]
+        if tier_4:
+            st.markdown("### 🌟 4/4 Agreement - STRONG BUY (Highest Conviction)")
+            st.markdown(f"*All 4 investment perspectives agree on these {len(tier_4)} stocks*")
+            
+            for pick in tier_4[:10]:  # Show top 10
+                with st.expander(f"**{pick['symbol']}** - Quality Score: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Quality Breakdown:**")
+                        fund = pick.get('fundamentals', {})
+                        mom = pick.get('momentum', {})
+                        st.markdown(f"- Fundamentals: **{fund.get('grade', 'N/A')}** ({fund.get('score', 0):.0f}/100)")
+                        st.markdown(f"- Momentum: **{mom.get('grade', 'N/A')}** ({mom.get('score', 0):.0f}/100)")
+                        risk = pick.get('risk', {})
+                        st.markdown(f"- Risk: **{risk.get('grade', 'N/A')}** ({risk.get('score', 0):.0f}/100)")
+                        sent = pick.get('sentiment', {})
+                        st.markdown(f"- Sentiment: **{sent.get('grade', 'N/A')}** ({sent.get('score', 0):.0f}/100)")
+                    
+                    with col2:
+                        st.markdown("**Consensus Details:**")
+                        st.markdown(f"- Recommendation: **{pick['recommendation']}**")
+                        st.markdown(f"- Confidence: **{pick['confidence']*100:.0f}%**")
+                        st.markdown(f"- Consensus Score: **{pick['consensus_score']}/100**")
+                        st.markdown(f"- Perspectives: {', '.join(pick.get('agreeing_perspectives', []))}")
+        
+        # 3/4 Agreement (BUY)
+        tier_3 = [p for p in consensus if p['strategies_agreeing'] == 3]
+        if tier_3:
+            st.markdown("### ⭐ 3/4 Agreement - BUY (Strong Majority)")
+            st.markdown(f"*3 out of 4 perspectives agree on these {len(tier_3)} stocks*")
+            
+            # Show condensed table
+            table_data = []
+            for pick in tier_3[:15]:  # Top 15
+                table_data.append({
+                    'Symbol': pick['symbol'],
+                    'Quality': f"{pick['quality_score']}/100",
+                    'Recommendation': pick['recommendation'],
+                    'Consensus': f"{pick['consensus_score']}/100",
+                    'Price': f"${pick.get('current_price', 0):.2f}",
+                    'Fund': pick.get('fundamentals', {}).get('grade', 'N/A'),
+                    'Mom': pick.get('momentum', {}).get('grade', 'N/A'),
+                    'Risk': pick.get('risk', {}).get('grade', 'N/A')
+                })
+            
+            df = pd.DataFrame(table_data)
+            st.dataframe(df, use_container_width=True)
+        
+        # 2/4 Agreement (WEAK BUY)
+        tier_2 = [p for p in consensus if p['strategies_agreeing'] == 2]
+        if tier_2:
+            with st.expander(f"⚡ 2/4 Agreement - WEAK BUY ({len(tier_2)} stocks)"):
+                table_data = []
+                for pick in tier_2[:20]:  # Top 20
+                    table_data.append({
+                        'Symbol': pick['symbol'],
+                        'Quality': f"{pick['quality_score']}/100",
+                        'Recommendation': pick['recommendation'],
+                        'Perspectives': ', '.join(pick.get('agreeing_perspectives', [])[:2])
+                    })
+                
+                df = pd.DataFrame(table_data)
+                st.dataframe(df, use_container_width=True)
+        
+        # Download button for full results
+        st.markdown("---")
+        st.markdown("### 📥 Export Options")
+        st.info("Results have been automatically exported to Excel. Check your project directory for the file.")
 
 
 if __name__ == "__main__":
