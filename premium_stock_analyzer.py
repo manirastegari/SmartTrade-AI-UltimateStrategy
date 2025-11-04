@@ -56,9 +56,9 @@ class PremiumStockAnalyzer:
             # If data not provided, fetch it
             if hist_data is None or info is None:
                 stock_data = self.data_fetcher.get_comprehensive_stock_data(symbol)
-                if not stock_data or 'hist' not in stock_data:
-                    return None
-                hist_data = stock_data.get('hist')
+                if not stock_data or 'data' not in stock_data:
+                    return self._empty_result(symbol, "No historical data available")
+                hist_data = stock_data.get('data')  # Changed from 'hist' to 'data'
                 info = stock_data.get('info', {})
             
             # CRITICAL FIX: If info is empty (market_cap=0), try direct yfinance as fallback
@@ -108,7 +108,7 @@ class PremiumStockAnalyzer:
                     # (Don't return error - just skip in batch analysis)
                     if '429' not in str(e):
                         print(f"⚠️ {symbol}: Fundamental data error ({e})")
-                    return None  # Return None instead of error result
+                    return self._empty_result(symbol, f"Data fetch failed: {e}")
             
             # Calculate all 15 metrics
             fundamentals = self._calculate_fundamentals(info, hist_data)

@@ -192,10 +192,10 @@ class FixedUltimateStrategyAnalyzer:
                 # Get comprehensive data from analyzer's data fetcher
                 stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
                 
-                if not stock_data or 'hist' not in stock_data:
+                if not stock_data or 'data' not in stock_data:
                     continue
                 
-                hist_data = stock_data.get('hist')
+                hist_data = stock_data.get('data')  # Changed from 'hist' to 'data'
                 info = stock_data.get('info', {})
                 
                 # Run quality analysis
@@ -203,11 +203,17 @@ class FixedUltimateStrategyAnalyzer:
                     symbol, hist_data=hist_data, info=info
                 )
                 
-                if quality_result.get('success'):
+                # Handle both None and error results
+                if quality_result and quality_result.get('success'):
                     results[symbol] = quality_result
                     
                     if idx % 50 == 0:
                         print(f"   ✅ Analyzed {idx}/{total} stocks")
+                elif quality_result and not quality_result.get('success'):
+                    # Log error but continue
+                    if idx % 50 == 0:
+                        error_msg = quality_result.get('error', 'Unknown error')
+                        print(f"   ⚠️ {symbol}: {error_msg}")
                 
             except Exception as e:
                 print(f"   ⚠️ Error analyzing {symbol}: {e}")
