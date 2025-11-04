@@ -142,6 +142,9 @@ class FixedUltimateStrategyAnalyzer:
             consensus_picks, market_analysis
         )
         
+        # Store consensus recommendations
+        self.consensus_recommendations = consensus_picks
+        
         # STEP 7: Optional: Get AI review for top picks
         if progress_callback:
             progress_callback("Generating AI insights...", 90)
@@ -465,11 +468,18 @@ class FixedUltimateStrategyAnalyzer:
             if os.environ.get('SMARTTRADE_DISABLE_REGIME_FILTER', '').lower() in ('1', 'true', 'yes'):
                 return list(consensus_list or []), []
             
-            # Only activate in caution regime
+            # Only activate in caution regime - DISABLED for premium universe
+            # Premium stocks are pre-screened for quality, don't need additional filtering
             if regime != 'caution':
                 return list(consensus_list or []), []
             
-            print(f"\n⚠️ CAUTION REGIME: Applying relaxed filters")
+            # RELAXED: Return all consensus picks in caution regime  
+            # Premium universe is already quality-filtered
+            print(f"\n⚠️ CAUTION REGIME detected - but keeping all premium consensus picks")
+            return list(consensus_list or []), []
+            
+            # OLD STRICT FILTERS (disabled for premium universe)
+            # print(f"\n⚠️ CAUTION REGIME: Applying relaxed filters")
             
         except Exception:
             return list(consensus_list or []), []
