@@ -176,51 +176,80 @@ class FixedUltimateStrategyAnalyzer:
     
     def _run_quality_analysis(self, symbols: List[str], progress_callback=None) -> Dict:
         """
-        Run quality analysis on all stocks using PremiumStockAnalyzer
+        Run quality analysis on all stocks using PremiumStockAnalyzer with batch processing
         
         Returns dict: {symbol: quality_analysis_result}
         """
+        import time
+        
         results = {}
         total = len(symbols)
+        batch_size = 50  # Process 50 stocks per batch
         
         print(f"\n📊 Analyzing {total} stocks with 15 quality metrics...")
+        print(f"🔄 Using batch processing: {batch_size} stocks per batch with 60s rest periods")
         
-        for idx, symbol in enumerate(symbols, 1):
-            try:
-                # Update progress
-                if progress_callback and idx % 10 == 0:
-                    pct = int(15 + (idx / total * 55))  # 15% to 70%
-                    progress_callback(f"Analyzing {symbol} ({idx}/{total})...", pct)
+        # Process in batches
+        for batch_start in range(0, total, batch_size):
+            batch_end = min(batch_start + batch_size, total)
+            batch_symbols = symbols[batch_start:batch_end]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (total + batch_size - 1) // batch_size
+            
+            print(f"\n📦 Processing batch {batch_num}/{total_batches} ({len(batch_symbols)} stocks)...")
+            
+            for idx, symbol in enumerate(batch_symbols, 1):
+                global_idx = batch_start + idx
                 
-                # Get comprehensive data from analyzer's data fetcher
-                stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
-                
-                if not stock_data or 'data' not in stock_data:
-                    continue
-                
-                hist_data = stock_data.get('data')  # Changed from 'hist' to 'data'
-                info = stock_data.get('info', {})
-                
-                # Run quality analysis
-                quality_result = self.premium_analyzer.analyze_stock(
-                    symbol, hist_data=hist_data, info=info
-                )
-                
-                # Handle both None and error results
-                if quality_result and quality_result.get('success'):
-                    results[symbol] = quality_result
+                try:
+                    # Update progress
+                    if progress_callback and global_idx % 10 == 0:
+                        pct = int(15 + (global_idx / total * 55))  # 15% to 70%
+                        progress_callback(f"Analyzing {symbol} ({global_idx}/{total})...", pct)
                     
-                    if idx % 50 == 0:
-                        print(f"   ✅ Analyzed {idx}/{total} stocks")
-                elif quality_result and not quality_result.get('success'):
-                    # Log error but continue
-                    if idx % 50 == 0:
-                        error_msg = quality_result.get('error', 'Unknown error')
-                        print(f"   ⚠️ {symbol}: {error_msg}")
-                
-            except Exception as e:
-                print(f"   ⚠️ Error analyzing {symbol}: {e}")
-                continue
+                    # Get comprehensive data from analyzer's data fetcher
+                    stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
+                    
+                    if not stock_data or 'data' not in stock_data:
+                        continue
+                    
+                    hist_data = stock_data.get('data')  # Changed from 'hist' to 'data'
+                    info = stock_data.get('info', {})
+                    
+                    # Run quality analysis
+                    quality_result = self.premium_analyzer.analyze_stock(
+                        symbol, hist_data=hist_data, info=info
+                    )
+                    
+                    # Handle both None and error results
+                    if quality_result and quality_result.get('success'):
+                        results[symbol] = quality_result
+                        
+                        # Diagnostic logging every 20 stocks
+                        if global_idx % 20 == 0:
+                            print(f"   ✅ Analyzed {global_idx}/{total} stocks")
+                            # Sample diagnostic for data structure
+                            sample = results[symbol]
+                            print(f"      📋 Sample {symbol} data structure:")
+                            print(f"         quality_score: {sample.get('quality_score', 'MISSING')}")
+                            print(f"         beta (flat): {sample.get('beta', 'MISSING')}")
+                            print(f"         beta (nested): {sample.get('risk', {}).get('beta', 'MISSING')}")
+                            print(f"         rsi_14 (flat): {sample.get('rsi_14', 'MISSING')}")
+                            print(f"         rsi (nested): {sample.get('momentum', {}).get('rsi', 'MISSING')}")
+                    elif quality_result and not quality_result.get('success'):
+                        # Log error but continue
+                        if global_idx % 50 == 0:
+                            error_msg = quality_result.get('error', 'Unknown error')
+                            print(f"   ⚠️ {symbol}: {error_msg}")
+                    
+                except Exception as e:
+                    print(f"   ⚠️ Error analyzing {symbol}: {e}")
+                    continue
+            
+            # Rest period between batches (except for last batch)
+            if batch_end < total:
+                print(f"😴 Resting 60 seconds before next batch (avoiding rate limits)...")
+                time.sleep(60)
         
         print(f"\n✅ Quality analysis complete: {len(results)}/{total} stocks successful")
         return results
@@ -394,6 +423,13 @@ class FixedUltimateStrategyAnalyzer:
                 # Get base quality data
                 quality_data = self.base_results.get(symbol, {})
                 
+                # Flatten nested data structure for Excel compatibility
+                fundamentals = quality_data.get('fundamentals', {})
+                momentum = quality_data.get('momentum', {})
+                risk = quality_data.get('risk', {})
+                technical = quality_data.get('technical', {})
+                sentiment = quality_data.get('sentiment', {})
+                
                 consensus.append({
                     'symbol': symbol,
                     'strategies_agreeing': agreement_count,
@@ -402,16 +438,86 @@ class FixedUltimateStrategyAnalyzer:
                     'quality_score': quality_data.get('quality_score', 0),
                     'recommendation': self._consensus_recommendation(agreement_count, avg_score),
                     'confidence': self._consensus_confidence(agreement_count, avg_score),
-                    'fundamentals': quality_data.get('fundamentals', {}),
-                    'momentum': quality_data.get('momentum', {}),
-                    'risk': quality_data.get('risk', {}),
-                    'sentiment': quality_data.get('sentiment', {}),
+                    'sector': quality_data.get('sector', 'Unknown'),
+                    
+                    # Flattened fundamentals for Excel
+                    'pe_ratio': fundamentals.get('pe_ratio'),
+                    'revenue_growth': fundamentals.get('revenue_growth'),
+                    'profit_margin': fundamentals.get('profit_margin'),
+                    'roe': fundamentals.get('roe'),
+                    'debt_equity': fundamentals.get('debt_equity'),
+                    'fundamentals_score': fundamentals.get('score'),
+                    'fundamentals_grade': fundamentals.get('grade'),
+                    
+                    # Flattened momentum for Excel
+                    'rsi_14': momentum.get('rsi'),
+                    'price_trend': momentum.get('price_trend', 'neutral'),
+                    'relative_strength': momentum.get('relative_strength'),
+                    'volume_trend': momentum.get('volume_trend'),
+                    'momentum_score': momentum.get('score'),
+                    'momentum_grade': momentum.get('grade'),
+                    'ma_50': momentum.get('ma_50'),
+                    'ma_200': momentum.get('ma_200'),
+                    'volume_ratio': momentum.get('volume_ratio'),
+                    
+                    # Flattened risk metrics for Excel
+                    'beta': risk.get('beta', 1),
+                    'volatility': risk.get('volatility'),
+                    'sharpe_ratio': risk.get('sharpe_ratio'),
+                    'max_drawdown': risk.get('max_drawdown'),
+                    'var_95': risk.get('var_95'),
+                    'risk_score': risk.get('score'),
+                    'risk_grade': risk.get('grade'),
+                    'risk_level': risk.get('risk_level', 'Unknown'),
+                    
+                    # Flattened technical indicators for Excel
+                    'macd': technical.get('macd'),
+                    'macd_signal': technical.get('macd_signal'),
+                    'macd_hist': technical.get('macd_hist'),
+                    'bollinger_position': technical.get('bollinger_position'),
+                    'support_level': technical.get('support'),
+                    'resistance_level': technical.get('resistance'),
+                    'technical_score': technical.get('score'),
+                    'technical_grade': technical.get('grade'),
+                    'bollinger_upper': technical.get('bollinger_upper'),
+                    'bollinger_lower': technical.get('bollinger_lower'),
+                    'volume_sma': technical.get('volume_sma'),
+                    
+                    # Flattened sentiment for Excel
+                    'sentiment_score': sentiment.get('score'),
+                    'sentiment_grade': sentiment.get('grade'),
+                    'target_upside': sentiment.get('target_upside'),
+                    'institutional_ownership': sentiment.get('institutional_ownership'),
+                    'analyst_rating': sentiment.get('analyst_rating'),
+                    
+                    # Keep nested data for backward compatibility
+                    'fundamentals': fundamentals,
+                    'momentum': momentum,
+                    'risk': risk,
+                    'technical': technical,
+                    'sentiment': sentiment,
+                    
                     'current_price': quality_data.get('current_price', 0),
                     'tier': f"{agreement_count}/4"
                 })
         
         # Sort by agreement count, then score
         consensus.sort(key=lambda x: (x['strategies_agreeing'], x['consensus_score']), reverse=True)
+        
+        # Diagnostic: Sample first consensus pick data structure
+        if consensus:
+            sample = consensus[0]
+            print(f"\n🔍 DIAGNOSTIC - Sample consensus pick data structure:")
+            print(f"   Symbol: {sample.get('symbol')}")
+            print(f"   Quality Score: {sample.get('quality_score')}")
+            print(f"   Consensus Score: {sample.get('consensus_score')}")
+            print(f"   Beta (flat): {sample.get('beta', 'MISSING')}")
+            print(f"   RSI (flat as rsi_14): {sample.get('rsi_14', 'MISSING')}")
+            print(f"   P/E Ratio (flat): {sample.get('pe_ratio', 'MISSING')}")
+            print(f"   Revenue Growth (flat): {sample.get('revenue_growth', 'MISSING')}")
+            print(f"   Nested risk dict exists: {bool(sample.get('risk'))}")
+            print(f"   Nested momentum dict exists: {bool(sample.get('momentum'))}")
+            print(f"   Nested fundamentals dict exists: {bool(sample.get('fundamentals'))}")
         
         # Print summary
         tier_counts = {4: 0, 3: 0, 2: 0}
@@ -539,10 +645,10 @@ class FixedUltimateStrategyAnalyzer:
             
             # Build focused prompt with quality metrics
             prompt = self._build_ai_prompt(tier_4_picks, tier_3_picks, market_ctx)
-            
+
             # Get AI analysis
             ai_response = self._call_grok_api(prompt, xai_key)
-            
+
             return {
                 'available': True,
                 'market_overview': ai_response.get('market_overview', ''),
@@ -594,7 +700,7 @@ class FixedUltimateStrategyAnalyzer:
 3. Risk Assessment (2 sentences): Main risks to watch
 4. Entry Timing (1-2 sentences): Best approach for entering positions now
 
-Keep response focused and actionable for conservative investors.
+Respond strictly as a JSON object with keys `market_overview`, `top_picks`, `risk_assessment`, `entry_timing`.
 """
         
         return prompt
@@ -602,31 +708,42 @@ Keep response focused and actionable for conservative investors.
     def _call_grok_api(self, prompt: str, api_key: str) -> Dict:
         """Call Grok API for analysis"""
         try:
-            import requests
-            
-            response = requests.post(
-                'https://api.x.ai/v1/chat/completions',
-                headers={
-                    'Authorization': f'Bearer {api_key}',
-                    'Content-Type': 'application/json'
-                },
-                json={
-                    'model': 'grok-beta',
-                    'messages': [{'role': 'user', 'content': prompt}],
-                    'max_tokens': 800,
-                    'temperature': 0.3
-                },
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                content = response.json()['choices'][0]['message']['content']
-                # Parse response sections
-                return self._parse_ai_response(content)
-            else:
-                print(f"⚠️ Grok API error: {response.status_code}")
+            from xai_client import XAIClient
+
+            client = XAIClient(api_key=api_key)
+            if not client.is_configured():
+                print("⚠️ Grok API key missing")
                 return {}
-                
+
+            system_prompt = (
+                "You are an institutional-grade trading strategist providing conservative, actionable insights. "
+                "Return JSON only."
+            )
+
+            response = client.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=800,
+            )
+
+            if not isinstance(response, dict):
+                return {}
+
+            # Remove metadata we added when parsing
+            response.pop("model_used", None)
+
+            # Fallback to legacy parsing if keys missing
+            expected = {"market_overview", "top_picks", "risk_assessment", "entry_timing"}
+            if expected.issubset(response.keys()):
+                return response
+
+            # If the model ignored JSON request, parse text result
+            raw_text = response.get("raw") if "raw" in response else str(response)
+            return self._parse_ai_response(raw_text)
+
         except Exception as e:
             print(f"⚠️ Grok API call failed: {e}")
             return {}
@@ -667,11 +784,87 @@ Keep response focused and actionable for conservative investors.
         for pick in consensus:
             tier_counts[pick['strategies_agreeing']] = tier_counts.get(pick['strategies_agreeing'], 0) + 1
         
+        # CRITICAL FIX: Include ALL analyzed stocks, not just consensus
+        # Prepare complete analysis for Excel export
+        all_analyzed = []
+        for symbol, quality_data in self.base_results.items():
+            # Flatten data structure for Excel
+            fundamentals = quality_data.get('fundamentals', {})
+            momentum = quality_data.get('momentum', {})
+            risk = quality_data.get('risk', {})
+            technical = quality_data.get('technical', {})
+            sentiment = quality_data.get('sentiment', {})
+            
+            all_analyzed.append({
+                'symbol': symbol,
+                'sector': quality_data.get('sector', 'Unknown'),
+                'quality_score': quality_data.get('quality_score'),
+                'current_price': quality_data.get('current_price'),
+                
+                # Fundamentals - flattened
+                'pe_ratio': fundamentals.get('pe_ratio'),
+                'revenue_growth': fundamentals.get('revenue_growth'),
+                'profit_margin': fundamentals.get('profit_margin'),
+                'roe': fundamentals.get('roe'),
+                'debt_equity': fundamentals.get('debt_equity'),
+                'fundamentals_score': fundamentals.get('score'),
+                'fundamentals_grade': fundamentals.get('grade', 'N/A'),
+                
+                # Momentum - flattened
+                'rsi_14': momentum.get('rsi'),
+                'price_trend': momentum.get('price_trend', 'N/A'),
+                'volume_trend': momentum.get('volume_trend', 'N/A'),
+                'momentum_score': momentum.get('score'),
+                'momentum_grade': momentum.get('grade', 'N/A'),
+                'ma_50': momentum.get('ma_50'),
+                'ma_200': momentum.get('ma_200'),
+                'volume_ratio': momentum.get('volume_ratio'),
+                
+                # Risk - flattened
+                'beta': risk.get('beta'),
+                'volatility': risk.get('volatility'),
+                'sharpe_ratio': risk.get('sharpe_ratio'),
+                'max_drawdown': risk.get('max_drawdown'),
+                'var_95': risk.get('var_95'),
+                'risk_score': risk.get('score'),
+                'risk_grade': risk.get('grade', 'N/A'),
+                'risk_level': risk.get('risk_level', 'N/A'),
+                
+                # Technical - flattened
+                'macd': technical.get('macd'),
+                'macd_signal': technical.get('macd_signal'),
+                'macd_hist': technical.get('macd_hist'),
+                'bollinger_position': technical.get('bollinger_position'),
+                'bollinger_upper': technical.get('bollinger_upper'),
+                'bollinger_lower': technical.get('bollinger_lower'),
+                'support_level': technical.get('support'),
+                'resistance_level': technical.get('resistance'),
+                'volume_sma': technical.get('volume_sma'),
+                'technical_score': technical.get('score'),
+                'technical_grade': technical.get('grade', 'N/A'),
+                
+                # Sentiment - flattened
+                'sentiment_score': sentiment.get('score'),
+                'sentiment_grade': sentiment.get('grade', 'N/A'),
+                'target_upside': sentiment.get('target_upside'),
+                'institutional_ownership': sentiment.get('institutional_ownership'),
+                'analyst_rating': sentiment.get('analyst_rating'),
+                
+                # Keep nested dicts for backward compatibility
+                'fundamentals': fundamentals,
+                'momentum': momentum,
+                'risk': risk,
+                'technical': technical,
+                'sentiment': sentiment
+            })
+        
         return {
             'consensus_recommendations': consensus,
+            'all_analyzed_stocks': all_analyzed,  # NEW: Complete dataset
             'market_analysis': market,
             'ai_insights': ai,
             'total_stocks_analyzed': len(self.base_results),
+            'consensus_picks_count': len(consensus),
             'stocks_4_of_4': tier_counts[4],
             'stocks_3_of_4': tier_counts[3],
             'stocks_2_of_4': tier_counts[2],
@@ -682,36 +875,50 @@ Keep response focused and actionable for conservative investors.
         }
     
     def _export_results(self, consensus: List, results: Dict):
-        """Export results to Excel"""
+        """Export results to Excel - including ALL analyzed stocks"""
         try:
             from excel_export import export_analysis_to_excel
             
-            # Convert consensus to export format
-            export_data = []
-            for pick in consensus:
-                export_data.append({
-                    'symbol': pick['symbol'],
-                    'recommendation': pick['recommendation'],
-                    'overall_score': pick['consensus_score'],
-                    'strategies_agreeing': f"{pick['strategies_agreeing']}/4",
-                    'quality_score': pick['quality_score'],
-                    'current_price': pick['current_price'],
-                    'fundamentals': pick.get('fundamentals', {}),
-                    'momentum': pick.get('momentum', {}),
-                    'risk': pick.get('risk', {}),
-                    'tier': pick['tier']
-                })
+            # CRITICAL FIX: Export ALL analyzed stocks, not just consensus
+            all_analyzed = results.get('all_analyzed_stocks', [])
             
+            # Convert consensus to export format (preserve rich metrics)
+            consensus_export = []
+            for pick in consensus:
+                export_pick = dict(pick)
+                export_pick['overall_score'] = pick.get('consensus_score')
+                export_pick['consensus_score'] = pick.get('consensus_score')
+                export_pick['strategies_agreeing_display'] = f"{pick.get('strategies_agreeing', 0)}/4"
+                export_pick['confidence_pct'] = round(pick.get('confidence', 0) * 100, 2)
+                consensus_export.append(export_pick)
+            
+            # Export with BOTH datasets
             filename, msg = export_analysis_to_excel(
-                export_data,
-                analysis_params='Premium Ultimate Strategy - 4-Perspective Consensus'
+                consensus_export,  # Consensus picks for main tabs
+                all_stocks_data=all_analyzed,  # NEW: All 613 stocks for complete tab
+                analysis_params=f'Premium Ultimate Strategy - {len(all_analyzed)} stocks analyzed, {len(consensus)} consensus picks'
             )
             
             if filename:
                 print(f"\n📊 Results exported to: {filename}")
+                print(f"   ✅ All {len(all_analyzed)} analyzed stocks included")
+                print(f"   ✅ {len(consensus)} consensus picks highlighted")
             
         except Exception as e:
             print(f"⚠️ Export failed: {e}")
+            # Fallback: try simpler export
+            try:
+                import pandas as pd
+                from datetime import datetime
+                
+                # Export all analyzed stocks to CSV as backup
+                if results.get('all_analyzed_stocks'):
+                    df = pd.DataFrame(results['all_analyzed_stocks'])
+                    filename = f"ultimate_strategy_all_stocks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    df.to_csv(filename, index=False)
+                    print(f"📊 Backup export to: {filename}")
+            except Exception as csv_e:
+                print(f"⚠️ Backup export also failed: {csv_e}")
     
     # Helper methods
     def _analyze_market_conditions(self) -> Dict:
@@ -783,6 +990,8 @@ Keep response focused and actionable for conservative investors.
         Display Premium Ultimate Strategy results in Streamlit UI
         
         Shows:
+        - Total stocks analyzed (ALL 613)
+        - Consensus picks (filtered by 2+ agreement)
         - Market analysis summary
         - Consensus recommendations by tier (4/4, 3/4, 2/4)
         - Quality breakdowns
@@ -791,16 +1000,54 @@ Keep response focused and actionable for conservative investors.
         
         if not results or not results.get('consensus_recommendations'):
             st.error("❌ No consensus recommendations found!")
+            # But show if we have base analysis
+            total_analyzed = results.get('total_stocks_analyzed', 0)
+            if total_analyzed > 0:
+                st.warning(f"⚠️ Analyzed {total_analyzed} stocks, but none met consensus criteria (2+ strategy agreement)")
             return
         
         consensus = results['consensus_recommendations']
+        all_analyzed = results.get('all_analyzed_stocks', [])
         market = results.get('market_analysis', {})
         ai_insights = results.get('ai_insights', {})
         
-        # Header
+        # CRITICAL FIX: Show BOTH total analyzed AND consensus picks clearly
         st.markdown("---")
         st.markdown("## 🎯 Premium Ultimate Strategy Results")
-        st.markdown(f"**Analysis Type**: {results.get('metrics_used', '15 Quality Metrics')}")
+        
+        # Key Statistics - Make it VERY clear
+        st.markdown("### 📊 Analysis Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            total = results.get('total_stocks_analyzed', 0)
+            st.metric("🔍 Total Stocks Analyzed", total)
+            st.caption("Complete quality analysis")
+        
+        with col2:
+            consensus_count = results.get('consensus_picks_count', len(consensus))
+            st.metric("✅ Consensus Picks", consensus_count)
+            st.caption("2+ strategies agreeing")
+        
+        with col3:
+            tier_4 = results.get('stocks_4_of_4', 0)
+            st.metric("🏆 4/4 Agreement", tier_4)
+            st.caption("Highest conviction")
+        
+        with col4:
+            tier_3 = results.get('stocks_3_of_4', 0)
+            st.metric("⭐ 3/4 Agreement", tier_3)
+            st.caption("Strong majority")
+        
+        st.info(f"""
+        **Analysis Method**: {results.get('metrics_used', '15 Quality Metrics')}
+        
+        **Understanding the Results:**
+        - **Total Analyzed ({total})**: All stocks received comprehensive quality analysis
+        - **Consensus Picks ({consensus_count})**: Stocks where 2 or more investment perspectives agree
+        - **Filtering is intentional**: Only showing highest-quality opportunities with multi-strategy validation
+        """)
+        
         st.markdown(f"**Analysis Date**: {results.get('analysis_date', 'N/A')}")
         
         # Market Overview

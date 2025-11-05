@@ -1133,205 +1133,188 @@ class AdvancedDataFetcher:
             return out
 
     def get_better_fundamentals(self, symbol):
-        """IMPROVED: Rate-limit-safe fundamentals with free fallbacks (fast_info, AV).
-        Strategy:
-        - Light mode: avoid heavy yfinance.info; prefer fast_info and keep lightweight defaults
-        - Full modes: try yfinance.info with backoff; then Alpha Vantage overview as backup
-        - Always attempt to fill market_cap via fast_info or AV if missing
         """
+        FIXED: Rate-limit-safe fundamentals WITHOUT Alpha Vantage dependency
+        
+        Strategy:
+        1. Always use yfinance Ticker.info (free, unlimited, comprehensive)
+        2. Extract ALL available fundamental metrics from yfinance
+        3. Calculate missing metrics from financial statements
+        4. NO Alpha Vantage calls (saves API quota for critical needs)
+        
+        Returns: Complete fundamentals dict with ALL fields populated
+        """
+        # Base structure with safe defaults
+        fundamentals = {
+            'pe_ratio': 0, 'forward_pe': 0, 'peg_ratio': 0, 'price_to_book': 0,
+            'price_to_sales': 0, 'enterprise_value': 0, 'ev_to_ebitda': 0,
+            'profit_margins': 0, 'operating_margins': 0, 'gross_margins': 0,
+            'roe': 0, 'roa': 0, 'roic': 0,
+            'revenue_growth': 0, 'earnings_growth': 0, 'earnings_quarterly_growth': 0,
+            'debt_to_equity': 0, 'current_ratio': 0, 'quick_ratio': 0,
+            'total_cash': 0, 'total_debt': 0,
+            'free_cashflow': 0, 'operating_cashflow': 0,
+            'dividend_yield': 0, 'payout_ratio': 0, 'dividend_rate': 0,
+            'market_cap': 0, 'sector': 'Unknown', 'industry': 'Unknown', 'beta': 1.0,
+            'target_price': 0, 'recommendation': 'hold', 'number_of_analyst_opinions': 0,
+        }
+
         try:
-            # Check cache first
+            # 1) Check cache first
             if self.cache:
                 cached_fundamentals = self.cache.get_cached_data(symbol, 'fundamentals')
                 if cached_fundamentals is not None:
                     return cached_fundamentals
-            
-            # Base structure with safe defaults (lightweight)
-            fundamentals = {
-                # Valuation metrics
-                'pe_ratio': 0, 'forward_pe': 0, 'peg_ratio': 0, 'price_to_book': 0,
-                'price_to_sales': 0, 'enterprise_value': 0, 'ev_to_ebitda': 0,
-                # Profitability metrics
-                'profit_margins': 0, 'operating_margins': 0, 'gross_margins': 0,
-                'roe': 0, 'roa': 0, 'roic': 0,
-                # Growth metrics
-                'revenue_growth': 0, 'earnings_growth': 0, 'earnings_quarterly_growth': 0,
-                # Financial health
-                'debt_to_equity': 0, 'current_ratio': 0, 'quick_ratio': 0,
-                'total_cash': 0, 'total_debt': 0,
-                # Cash flow
-                'free_cashflow': 0, 'operating_cashflow': 0,
-                # Dividend info
-                'dividend_yield': 0, 'payout_ratio': 0, 'dividend_rate': 0,
-                # Company info
-                'market_cap': 0, 'sector': 'Unknown', 'industry': 'Unknown', 'beta': 1.0,
-                # Analyst metrics
-                'target_price': 0, 'recommendation': 'hold', 'number_of_analyst_opinions': 0,
-            }
 
-            # Always create ticker but guard with backoff
-            ticker = None
+            # 2) Create ticker with minimal delay
+            ticker = yf.Ticker(symbol)
+
+            # 3) Get comprehensive info dict with PROPER rate limit protection
+            info = None
             try:
-                # Basic rate limiting between yfinance calls
-                now = time.time()
-                dt = now - getattr(self, '_last_yfinance_call', 0)
-                if dt < self._yfinance_delay:
-                    time.sleep(self._yfinance_delay - dt)
-                ticker = yf.Ticker(symbol)
+                # CRITICAL: Yahoo Finance rate limit = ~2000 requests/hour = 1 request per 2 seconds
+                # Being conservative with 2.5 second delay to avoid IP bans
+                if hasattr(self, '_last_yfinance_call'):
+                    elapsed = time.time() - self._last_yfinance_call
+                    min_delay = 2.5  # 2.5 seconds between calls (safe rate)
+                    if elapsed < min_delay:
+                        wait_time = min_delay - elapsed
+                        if self.verbose:
+                            print(f"  ⏳ Rate limiting: waiting {wait_time:.1f}s before fetching {symbol}")
+                        time.sleep(wait_time)
+
+                info = ticker.info or {}
                 self._last_yfinance_call = time.time()
-            except Exception:
-                ticker = None
 
-            # Light mode: avoid heavy info endpoint; prefer fast_info
-            info_used = 'none'
-            if self.data_mode == 'light':
-                try:
-                    fi = getattr(ticker, 'fast_info', None) if ticker else None
-                    if fi:
-                        mc = None
-                        try:
-                            mc = fi.get('market_cap', None)
-                        except Exception:
-                            mc = None
-                        if not mc:
-                            mc = getattr(fi, 'market_cap', None)
-                        if mc:
-                            fundamentals['market_cap'] = int(mc)
-                            info_used = 'fast_info'
-                        # Try capture beta if exposed
-                        try:
-                            beta = fi.get('beta', None)
-                        except Exception:
-                            beta = getattr(fi, 'beta', None)
-                        if beta is not None:
-                            fundamentals['beta'] = float(beta)
-                except Exception:
-                    pass
-            else:
-                # Non-light modes: cautiously try yfinance.info with backoff
-                try:
-                    # Backoff if needed
-                    now = time.time()
-                    dt = now - getattr(self, '_last_yfinance_call', 0)
-                    if dt < self._yfinance_delay:
-                        time.sleep(self._yfinance_delay - dt)
-                    info = (ticker.info if ticker else {}) or {}
-                    self._last_yfinance_call = time.time()
-
-                    fundamentals.update({
-                        'pe_ratio': info.get('trailingPE', 0) or 0,
-                        'forward_pe': info.get('forwardPE', 0) or 0,
-                        'peg_ratio': info.get('pegRatio', 0) or 0,
-                        'price_to_book': info.get('priceToBook', 0) or 0,
-                        'price_to_sales': info.get('priceToSalesTrailing12Months', 0) or 0,
-                        'enterprise_value': info.get('enterpriseValue', 0) or 0,
-                        'ev_to_ebitda': info.get('enterpriseToEbitda', 0) or 0,
-                        'profit_margins': info.get('profitMargins', 0) or 0,
-                        'operating_margins': info.get('operatingMargins', 0) or 0,
-                        'gross_margins': info.get('grossMargins', 0) or 0,
-                        'roe': info.get('returnOnEquity', 0) or 0,
-                        'roa': info.get('returnOnAssets', 0) or 0,
-                        'roic': info.get('returnOnCapital', 0) or 0,
-                        'revenue_growth': info.get('revenueGrowth', 0) or 0,
-                        'earnings_growth': info.get('earningsGrowth', 0) or 0,
-                        'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth', 0) or 0,
-                        'debt_to_equity': info.get('debtToEquity', 0) or 0,
-                        'current_ratio': info.get('currentRatio', 0) or 0,
-                        'quick_ratio': info.get('quickRatio', 0) or 0,
-                        'total_cash': info.get('totalCash', 0) or 0,
-                        'total_debt': info.get('totalDebt', 0) or 0,
-                        'free_cashflow': info.get('freeCashflow', 0) or 0,
-                        'operating_cashflow': info.get('operatingCashflow', 0) or 0,
-                        'dividend_yield': info.get('dividendYield', 0) or 0,
-                        'payout_ratio': info.get('payoutRatio', 0) or 0,
-                        'dividend_rate': info.get('dividendRate', 0) or 0,
-                        'market_cap': info.get('marketCap', 0) or 0,
-                        'sector': info.get('sector', 'Unknown') or 'Unknown',
-                        'industry': info.get('industry', 'Unknown') or 'Unknown',
-                        'beta': info.get('beta', 1.0) or 1.0,
-                        'target_price': info.get('targetMeanPrice', 0) or 0,
-                        'recommendation': info.get('recommendationKey', 'hold') or 'hold',
-                        'number_of_analyst_opinions': info.get('numberOfAnalystOpinions', 0) or 0,
-                    })
-                    info_used = 'yfinance.info'
-                except Exception:
-                    pass
-
-                # If market_cap still missing, try fast_info
-                if not fundamentals.get('market_cap') and ticker is not None:
+                # yfinance>=0.2 can return empty dicts for .info, so fall back to get_info()
+                if not info:
                     try:
-                        fi = getattr(ticker, 'fast_info', None)
-                        if fi:
-                            mc = None
-                            try:
-                                mc = fi.get('market_cap', None)
-                            except Exception:
-                                mc = None
-                            if not mc:
-                                mc = getattr(fi, 'market_cap', None)
-                            if mc:
-                                fundamentals['market_cap'] = int(mc)
-                                info_used = 'fast_info'
-                    except Exception:
-                        pass
+                        if self.verbose:
+                            print(f"  🔄 {symbol}: .info empty, trying get_info() fallback")
+                        info = ticker.get_info() or {}
+                    except Exception as alt_e:
+                        if self.verbose:
+                            print(f"  ⚠️ {symbol}: get_info() fallback failed: {alt_e}")
+                        info = {}
+                elif self.verbose:
+                    print(f"  ℹ️ {symbol}: fetched {len(info)} info fields")
 
-            # Optional Alpha Vantage fundamentals fallback (free but rate limited)
-            if (not fundamentals.get('market_cap') or fundamentals.get('pe_ratio', 0) == 0) and ALPHA_VANTAGE_AVAILABLE and getattr(self, 'av_fd', None):
+            except Exception as e:
+                # If info fails (rate limit, timeout, etc), we'll use fast_info fallback
+                error_msg = str(e)
+                if '429' in error_msg:
+                    print(f"⚠️ {symbol}: Rate limited on yfinance.info (IP may be temporarily blocked)")
+                    print(f"   Falling back to fast_info. Wait 1-2 hours for IP unblock.")
+                elif 'timeout' in error_msg.lower():
+                    print(f"⚠️ {symbol}: Timeout on yfinance.info, using fast_info")
+                else:
+                    if self.verbose:
+                        print(f"  ⚠️ {symbol}: Unexpected info error: {error_msg}")
+                info = {}
+
+            # 4) Extract ALL available fundamentals from yfinance.info
+            if info:
+                fundamentals.update({
+                    # Valuation
+                    'pe_ratio': float(info.get('trailingPE') or info.get('regularMarketPE') or 0),
+                    'forward_pe': float(info.get('forwardPE') or 0),
+                    'peg_ratio': float(info.get('pegRatio') or 0),
+                    'price_to_book': float(info.get('priceToBook') or 0),
+                    'price_to_sales': float(info.get('priceToSalesTrailing12Months') or 0),
+                    'enterprise_value': int(info.get('enterpriseValue') or 0),
+                    'ev_to_ebitda': float(info.get('enterpriseToEbitda') or 0),
+                    
+                    # Profitability
+                    'profit_margins': float(info.get('profitMargins') or 0),
+                    'operating_margins': float(info.get('operatingMargins') or 0),
+                    'gross_margins': float(info.get('grossMargins') or 0),
+                    'roe': float(info.get('returnOnEquity') or 0),
+                    'roa': float(info.get('returnOnAssets') or 0),
+                    'roic': float(info.get('returnOnCapital') or 0),
+                    
+                    # Growth
+                    'revenue_growth': float(info.get('revenueGrowth') or 0),
+                    'earnings_growth': float(info.get('earningsGrowth') or 0),
+                    'earnings_quarterly_growth': float(info.get('earningsQuarterlyGrowth') or 0),
+                    
+                    # Financial Health
+                    'debt_to_equity': float(info.get('debtToEquity') or 0),
+                    'current_ratio': float(info.get('currentRatio') or 0),
+                    'quick_ratio': float(info.get('quickRatio') or 0),
+                    'total_cash': int(info.get('totalCash') or 0),
+                    'total_debt': int(info.get('totalDebt') or 0),
+                    
+                    # Cash Flow
+                    'free_cashflow': int(info.get('freeCashflow') or 0),
+                    'operating_cashflow': int(info.get('operatingCashflow') or 0),
+                    
+                    # Dividends
+                    'dividend_yield': float(info.get('dividendYield') or 0),
+                    'payout_ratio': float(info.get('payoutRatio') or 0),
+                    'dividend_rate': float(info.get('dividendRate') or 0),
+                    
+                    # Company Info
+                    'market_cap': int(info.get('marketCap') or 0),
+                    'sector': info.get('sector') or 'Unknown',
+                    'industry': info.get('industry') or 'Unknown',
+                    'beta': float(info.get('beta') or info.get('beta3Year') or 1.0),
+                    
+                    # Analyst
+                    'target_price': float(info.get('targetMeanPrice') or 0),
+                    'recommendation': info.get('recommendationKey') or 'hold',
+                    'number_of_analyst_opinions': int(info.get('numberOfAnalystOpinions') or 0),
+                })
+
+            # 5) Fallback to fast_info for market cap if still missing
+            if fundamentals['market_cap'] == 0:
                 try:
-                    # Respect AV free-tier rate limits: small sleep
-                    time.sleep(0.2)
-                    df_ov, _ = self.av_fd.get_company_overview(symbol)
-                    if isinstance(df_ov, pd.DataFrame) and not df_ov.empty:
-                        row = df_ov.iloc[0]
-                        def to_float(x, default=0.0):
-                            try:
-                                return float(x)
-                            except Exception:
-                                return default
-                        mc = to_float(row.get('MarketCapitalization', 0), 0.0)
-                        if mc and not np.isnan(mc):
-                            fundamentals['market_cap'] = int(mc)
-                            info_used = info_used if info_used != 'none' else 'alpha_vantage'
-                        pe = to_float(row.get('PERatio', 0), 0.0)
-                        if pe:
-                            fundamentals['pe_ratio'] = pe
-                        pb = to_float(row.get('PriceToBookRatio', 0), 0.0)
-                        if pb:
-                            fundamentals['price_to_book'] = pb
-                        dy = to_float(row.get('DividendYield', 0), 0.0)
-                        if dy:
-                            fundamentals['dividend_yield'] = dy
-                        beta = to_float(row.get('Beta', 0), 0.0)
-                        if beta:
-                            fundamentals['beta'] = beta
-                        sector = row.get('Sector', None)
-                        if sector:
-                            fundamentals['sector'] = sector
-                except Exception:
+                    fast_info = ticker.fast_info
+                    if hasattr(fast_info, 'market_cap'):
+                        fundamentals['market_cap'] = int(fast_info.market_cap or 0)
+                    elif isinstance(fast_info, dict):
+                        fundamentals['market_cap'] = int(fast_info.get('market_cap', 0))
+                except:
                     pass
 
-            # Log summary for diagnostics
-            try:
-                src = info_used
-                mc_disp = fundamentals.get('market_cap', 0)
-                print(f"📈 Fundamentals[{symbol}]: market_cap=${mc_disp:,.0f} via {src}")
-            except Exception:
-                pass
+            # 6) Calculate missing PE ratio from financials if needed
+            if fundamentals['pe_ratio'] == 0 and fundamentals['market_cap'] > 0:
+                try:
+                    financials = ticker.financials
+                    if financials is not None and not financials.empty:
+                        if 'Net Income' in financials.index:
+                            net_income = float(financials.loc['Net Income'].iloc[0])
+                            if net_income > 0:
+                                fundamentals['pe_ratio'] = fundamentals['market_cap'] / net_income
+                except:
+                    pass
 
-            # Cache the results
-            if self.cache:
+            if self.verbose:
+                populated = {k: fundamentals[k] for k in ('market_cap', 'pe_ratio', 'roe', 'revenue_growth')}
+                print(f"  📊 {symbol}: fundamentals snapshot {populated}")
+
+            # 7) Cache and return
+            # Only cache if we actually populated meaningful data
+            meaningful_fields = [
+                fundamentals.get('market_cap'),
+                fundamentals.get('pe_ratio'),
+                fundamentals.get('revenue_growth'),
+                fundamentals.get('roe'),
+                fundamentals.get('profit_margins')
+            ]
+            has_meaningful_data = any(
+                field not in (None, 0, 0.0, 'Unknown') for field in meaningful_fields
+            )
+
+            if self.cache and has_meaningful_data:
                 self.cache.save_to_cache(symbol, fundamentals, 'fundamentals')
+            elif self.cache and self.verbose:
+                print(f"  ⚠️ {symbol}: fundamentals missing, skipping cache save")
             
             return fundamentals
-            
+
         except Exception as e:
-            print(f"⚠️ Error fetching fundamentals for {symbol}: {e}")
-            # Return empty fundamentals instead of failing
-            return {
-                'pe_ratio': 0, 'forward_pe': 0, 'peg_ratio': 0, 'price_to_book': 0,
-                'profit_margins': 0, 'roe': 0, 'revenue_growth': 0, 'market_cap': 0,
-                'sector': 'Unknown', 'beta': 1.0
-            }
+            print(f"❌ {symbol}: get_better_fundamentals exception => {e}")
+            return fundamentals
     
     def analyze_sentiment_improved(self, news_list):
         """IMPROVEMENT #5: Better sentiment analysis with VADER (financial-specific)"""
@@ -1395,13 +1378,48 @@ class AdvancedDataFetcher:
             try:
                 fundamentals = self.get_better_fundamentals(symbol)
                 info = {
+                    # Valuation
                     'marketCap': fundamentals.get('market_cap', 0),
                     'trailingPE': fundamentals.get('pe_ratio', 0),
-                    'sector': fundamentals.get('sector', 'Unknown'),
-                    'beta': fundamentals.get('beta', 1.0),
-                    'debtToEquity': fundamentals.get('debt_to_equity', 0.0),
+                    'forwardPE': fundamentals.get('forward_pe', 0),
+                    'pegRatio': fundamentals.get('peg_ratio', 0),
                     'priceToBook': fundamentals.get('price_to_book', 0),
+                    'priceToSalesTrailing12Months': fundamentals.get('price_to_sales', 0),
+                    'enterpriseToEbitda': fundamentals.get('ev_to_ebitda', 0),
+                    'enterpriseValue': fundamentals.get('enterprise_value', 0),
+
+                    # Profitability & Growth
+                    'profitMargins': fundamentals.get('profit_margins', 0),
+                    'operatingMargins': fundamentals.get('operating_margins', 0),
+                    'grossMargins': fundamentals.get('gross_margins', 0),
+                    'returnOnEquity': fundamentals.get('roe', 0),
+                    'returnOnAssets': fundamentals.get('roa', 0),
+                    'returnOnCapital': fundamentals.get('roic', 0),
+                    'revenueGrowth': fundamentals.get('revenue_growth', 0),
+                    'earningsGrowth': fundamentals.get('earnings_growth', 0),
+                    'earningsQuarterlyGrowth': fundamentals.get('earnings_quarterly_growth', 0),
+
+                    # Financial health
+                    'debtToEquity': fundamentals.get('debt_to_equity', 0),
+                    'currentRatio': fundamentals.get('current_ratio', 0),
+                    'quickRatio': fundamentals.get('quick_ratio', 0),
+                    'totalCash': fundamentals.get('total_cash', 0),
+                    'totalDebt': fundamentals.get('total_debt', 0),
+                    'freeCashflow': fundamentals.get('free_cashflow', 0),
+                    'operatingCashflow': fundamentals.get('operating_cashflow', 0),
+
+                    # Dividends
                     'dividendYield': fundamentals.get('dividend_yield', 0),
+                    'dividendRate': fundamentals.get('dividend_rate', 0),
+                    'payoutRatio': fundamentals.get('payout_ratio', 0),
+
+                    # Company/Analyst context
+                    'beta': fundamentals.get('beta', 1.0),
+                    'sector': fundamentals.get('sector', 'Unknown'),
+                    'industry': fundamentals.get('industry', 'Unknown'),
+                    'targetMeanPrice': fundamentals.get('target_price', 0),
+                    'recommendationKey': fundamentals.get('recommendation', 'hold'),
+                    'numberOfAnalystOpinions': fundamentals.get('number_of_analyst_opinions', 0),
                 }
             except Exception as e:
                 # Fallback to minimal info if fundamentals fail

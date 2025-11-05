@@ -27,7 +27,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Software Leaders
         'PANW', 'SNPS', 'CDNS', 'ADSK', 'WDAY', 'FTNT',
-        'TEAM', 'VEEV', 'ANSS', 'DDOG',
+        'TEAM', 'VEEV', 'ZS', 'DDOG',  # Replaced ANSS (delisted) with ZS (Zscaler)
         
         # Semiconductors - Established
         'ADI', 'KLAC', 'MU', 'MCHP', 'NXPI', 'MRVL',
@@ -49,18 +49,18 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Medical Devices - Quality Leaders
         'ISRG', 'SYK', 'BSX', 'MDT', 'BDX', 'EW', 'ZBH', 'BAX',
-        'HOLX', 'STE', 'RMD', 'ALGN', 'PODD', 'COO', 'WAT', 'IDXX',
-        'DXCM', 'ILMN', 'A', 'TFX', 'MMSI', 'HAE', 'TECH', 'QDEL',
+        'HOLX', 'STE', 'RMD', 'ALGN', 'PODD', 'COO', 'SOLV', 'IDXX',  # Replaced WAT with SOLV
+        'DXCM', 'ILMN', 'GKOS', 'TFX', 'MMSI', 'HAE', 'TECH', 'QDEL',  # Replaced A with GKOS (Glaukos)
         
         # Healthcare Services - Stable Revenue
         'HCA', 'IQV', 'HUM', 'CNC', 'CI', 'CVS', 'ELV', 'MOH',
         'CRL', 'MEDP', 'LH', 'DGX', 'GEHC', 'WST', 'BRKR',
         
         # Managed Care & Insurance
-        'ANTM', 'CYH', 'THC', 'UHS', 'ALC',
+        'ELV', 'CYH', 'THC', 'UHS', 'ALC',  # Replaced ANTM (delisted, merged) with ELV (already in list)
         
         # Pharma Services
-        'VTRS', 'PBH', 'PRGO', 'OGN', 'CORT', 'LBPH', 'JAZZ',
+        'VTRS', 'PBH', 'PRGO', 'OGN', 'CORT', 'TEVA', 'JAZZ',  # Replaced LBPH with TEVA
         'INCY', 'EXAS', 'UTHR', 'NBIX', 'BMRN'
     ],
     
@@ -76,25 +76,25 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Asset Management - Blue Chip
         'BLK', 'BX', 'KKR', 'APO', 'ARES', 'CG', 'TROW', 'IVZ',
-        'BEN', 'AMG', 'SEIC', 'APAM',
+        'BEN', 'VIRT', 'SEIC', 'APAM',  # Replaced AMG with VIRT (Virtu Financial)
         
         # Insurance - Quality
-        'BRK-B', 'PGR', 'TRV', 'ALL', 'AIG', 'MET', 'PRU', 'AFL',
-        'CINF', 'WRB', 'L', 'GL', 'AIZ', 'CB', 'AJG', 'MMC',
-        'AON', 'BRO', 'ERIE', 'SIGI', 'RLI', 'AFG', 'FNF',
+        'BRK.B', 'PGR', 'TRV', 'ALL', 'AIG', 'MET', 'PRU', 'AFL',  # Changed BRK-B to BRK.B for yfinance
+        'CINF', 'WRB', 'LPLA', 'GL', 'AIZ', 'CBRE', 'AJG', 'MMC',  # Replaced L with LPLA, CB with CBRE, BRO with existing
+        'AON', 'WTW', 'ERIE', 'SIGI', 'RLI', 'AFG', 'FNF',  # Replaced BRO with WTW (Willis Towers Watson)
         'CNA', 'RNR', 'KNSL', 'HIG', 'AXP',
         
         # Payment & Fintech - Established
-        'V', 'MA', 'PYPL', 'FI', 'FIS', 'FISV', 'PAYX', 'GPN',
+        'V', 'MA', 'PYPL', 'FI', 'FIS', 'FLT', 'PAYX', 'GPN',  # Replaced FISV with FLT (FleetCor)
         'ADP', 'BR',
         
         # Exchanges & Data
-        'CME', 'ICE', 'NDAQ', 'MSCI', 'SPGI', 'MCO', 'CBOE',
+        'CME', 'ICE', 'NDAQ', 'MORN', 'SPGI', 'MCO', 'CBOE',  # Replaced MSCI with MORN (Morningstar)
         'MKTX', 'VRSK',
         
         # REITs - Quality
         'AMT', 'PLD', 'EQIX', 'PSA', 'EXR', 'WELL', 'AVB', 'EQR',
-        'O', 'SPG', 'VTR', 'DLR', 'SBAC'
+        'O', 'VICI', 'VTR', 'DLR', 'SBAC'  # Replaced SPG with VICI (VICI Properties)
     ],
     
     # ========================================================================
@@ -119,7 +119,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         'COTY', 'EPC', 'IPAR', 'NWL', 'SPB', 'JBSS',
         
         # Food Distributors
-        'USF D', 'PFGC', 'CHEF', 'UNFI'
+        'USFD', 'PFGC', 'CHEF', 'UNFI'  # Replaced 'USF D' with 'USFD'
     ],
     
     # ========================================================================
@@ -146,7 +146,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         'F', 'GM', 'HMC', 'TM',
         
         # Leisure & Travel
-        'MAR', 'HLT', 'H', 'WYNN', 'LVS', 'MGM', 'CCL', 'RCL'
+        'MAR', 'HLT', 'IHG', 'WYNN', 'LVS', 'MGM', 'CCL', 'RCL'  # Replaced H with IHG (InterContinental Hotels)
     ],
     
     # ========================================================================
@@ -161,15 +161,15 @@ PREMIUM_QUALITY_UNIVERSE = {
         # Industrial Conglomerates & Manufacturing
         'GE', 'HON', 'CAT', 'DE', 'EMR', 'ITW', 'MMM', 'ETN',
         'PH', 'ROK', 'DOV', 'IR', 'XYL', 'FLS', 'ROP',
-        'CMI', 'PCAR', 'OSK', 'FAST', 'MSM', 'AOS',
+        'CMI', 'PCAR', 'OSK', 'FAST', 'ARMK', 'AOS',  # Replaced MSM with ARMK (Aramark)
         
         # Transportation & Logistics
-        'UNP', 'UPS', 'FDX', 'NSC', 'CSX', 'ODFL', 'SAIA', 'XPO',
+        'UNP', 'UPS', 'JBLU', 'NSC', 'CSX', 'ODFL', 'SAIA', 'XPO',  # Replaced FDX with JBLU
         'JBHT', 'KNX', 'CHRW', 'EXPD', 'LSTR',
         
         # Construction & Engineering
-        'URI', 'VMC', 'MLM', 'SUM', 'FWRD', 'BLD', 'BLDR', 'OC',
-        'BECN', 'UFPI',
+        'URI', 'VMC', 'MLM', 'SKY', 'FWRD', 'BLD', 'LEN', 'OC',  # Replaced SUM with SKY, BLDR with LEN, BECN with OC
+        'MTZ', 'UFPI',  # Replaced BECN with MTZ (MasTec)
         
         # Electrical & Equipment
         'HUBB', 'AME', 'TT', 'GNRC', 'AIT', 'RRX'
@@ -185,16 +185,16 @@ PREMIUM_QUALITY_UNIVERSE = {
         'MPC', 'FANG', 'DVN', 'HAL', 'BKR',
         
         # E&P - Quality
-        'APA', 'CTRA', 'HES', 'MTDR', 'MRO',
+        'APA', 'CTRA', 'PXD', 'MTDR', 'SM',  # Replaced HES with PXD (Pioneer), MRO with SM (SM Energy)
         
         # Midstream & Infrastructure
         'WMB', 'KMI', 'OKE', 'LNG', 'TRGP', 'EPD', 'ET',
         
         # Oilfield Services
-        'NOV', 'FTI', 'VAL', 'CHX', 'HP',
+        'NOV', 'FTI', 'VAL', 'RIG', 'HP',  # Replaced CHX with RIG (Transocean)
         
         # Coal & Traditional
-        'ARCH', 'BTU', 'CEIX'
+        'CEIX', 'BTU', 'ARLP'  # Replaced ARCH with CEIX (kept), added ARLP
     ],
     
     # ========================================================================
@@ -211,7 +211,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         'DTE', 'ETR', 'PPL', 'LNT', 'OGE', 'NWE',
         
         # Water Utilities
-        'AWK', 'AWR', 'CWT', 'SJW', 'MSEX',
+        'AWK', 'AWR', 'CWT', 'YORW', 'MSEX',  # Replaced SJW with YORW (York Water)
         
         # Gas Utilities
         'ATO', 'SR', 'NJR', 'NFG', 'SWX'
@@ -227,10 +227,10 @@ PREMIUM_QUALITY_UNIVERSE = {
         'FMC', 'IFF', 'PPG', 'RPM', 'SEE', 'AVY',
         
         # Packaging
-        'PKG', 'IP', 'WRK', 'AMCR', 'SON', 'GPK', 'SLVM',
+        'PKG', 'IP', 'CCK', 'AMCR', 'SON', 'GPK', 'SLVM',  # Replaced WRK with CCK (Crown Holdings)
         
         # Mining & Metals - Quality
-        'NEM', 'FCX', 'GOLD', 'AEM', 'SCCO', 'AA', 'X', 'NUE',
+        'NEM', 'FCX', 'AU', 'AEM', 'SCCO', 'AA', 'CMC', 'NUE',  # Replaced GOLD with AU (AngloGold), X with CMC (Commercial Metals)
         'STLD', 'RS', 'CLF', 'MT', 'TECK'
     ],
     
@@ -243,19 +243,19 @@ PREMIUM_QUALITY_UNIVERSE = {
         'AMT', 'CCI', 'SBAC', 'EQIX', 'DLR',
         
         # Industrial & Logistics
-        'PLD', 'DRE', 'FR', 'STAG', 'TRNO',
+        'PLD', 'REXR', 'FR', 'STAG', 'TRNO',  # Replaced DRE with REXR (Rexford Industrial)
         
         # Residential
         'AVB', 'EQR', 'MAA', 'UDR', 'ESS', 'CPT', 'SUI', 'ELS',
         
         # Retail
-        'O', 'SPG', 'REG', 'KIM', 'BRX', 'STOR', 'NNN', 'ADC',
+        'O', 'VICI', 'REG', 'KIM', 'BRX', 'NETL', 'NNN', 'ADC',  # Replaced SPG with VICI (above), STOR with NETL
         
         # Office
         'BXP', 'VNO', 'SLG', 'HIW', 'CUZ',
         
         # Healthcare
-        'WELL', 'VTR', 'PEAK', 'DOC', 'HR', 'LTC',
+        'WELL', 'VTR', 'CTRE', 'DOC', 'HR', 'LTC',  # Replaced PEAK with CTRE (CareTrust REIT)
         
         # Specialty
         'PSA', 'EXR', 'CUBE', 'NSA'
@@ -270,20 +270,20 @@ PREMIUM_QUALITY_UNIVERSE = {
         'T', 'VZ', 'TMUS', 'CMCSA',
         
         # Media & Entertainment
-        'DIS', 'NFLX', 'PARA', 'WBD', 'FOXA', 'FOX', 'ROKU',
+        'DIS', 'NFLX', 'LGF.A', 'WBD', 'FOXA', 'FOX', 'ROKU',  # Replaced PARA with LGF.A (Lions Gate)
         'SPOT',
         
         # Gaming - Established
-        'EA', 'TTWO', 'ATVI',
+        'EA', 'TTWO', 'RBLX',  # Replaced ATVI (acquired by MSFT) with RBLX (Roblox)
         
         # Advertising & Marketing
         'OMC', 'IPG', 'PUBM', 'MGNI',
         
         # Publishing & News
-        'NYT', 'LEE', 'QUAD',
+        'NYT', 'LEE', 'NWSA',  # Replaced QUAD with NWSA (News Corp)
         
         # Cable & Satellite
-        'CHTR', 'DISH', 'SIRI', 'CABO'
+        'CHTR', 'LUMN', 'SIRI', 'CABO'  # Replaced DISH with LUMN (Lumen)
     ],
     
     # ========================================================================
@@ -292,7 +292,7 @@ PREMIUM_QUALITY_UNIVERSE = {
     # ========================================================================
     'quality_midcaps': [
         # Industrial Mid-Caps
-        'PWR', 'OTIS', 'CARR', 'J', 'WCC', 'MSA', 'CR', 'FN',
+        'PWR', 'OTIS', 'CARR', 'J', 'WCC', 'MLI', 'CR', 'FN',  # Replaced MSA with MLI (Mueller Industries)
         'TILE', 'SSD', 'AIR', 'LPX', 'MHO', 'KBH', 'TPH',
         
         # Tech Mid-Caps
@@ -301,7 +301,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         'SSNC', 'MANH', 'CVLT', 'BSY', 'CDW', 'DELL',
         
         # Healthcare Mid-Caps
-        'GMED', 'ENSG', 'ACHC', 'NHC', 'PNTG', 'RRX', 'LMAT',
+        'GMED', 'ENSG', 'ACHC', 'SEM', 'PNTG', 'RRX', 'LMAT',  # Replaced NHC with SEM (Select Medical)
         'NVCR', 'ICUI', 'CERT', 'OMCL', 'ANGO',
         
         # Financial Mid-Caps
@@ -310,7 +310,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Consumer Mid-Caps
         'CASY', 'FLO', 'ELF', 'CALM', 'JJSF', 'SMPL', 'USNA',
-        'CVLG', 'UVV', 'SHAK', 'BROS', 'CAVA',
+        'GO', 'UVV', 'SHAK', 'BROS', 'CAVA',  # Replaced CVLG with GO (Grocery Outlet)
         
         # Materials Mid-Caps
         'HUN', 'AXTA', 'KWR', 'NGVT', 'SLGN',

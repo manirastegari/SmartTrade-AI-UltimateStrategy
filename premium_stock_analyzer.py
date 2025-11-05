@@ -114,7 +114,10 @@ class PremiumStockAnalyzer:
             fundamentals = self._calculate_fundamentals(info, hist_data)
             momentum = self._calculate_momentum(hist_data, symbol)
             risk = self._calculate_risk(hist_data, info)
-            sentiment = self._calculate_sentiment(info)
+            technical = self._calculate_technical(hist_data)
+            # Use latest close as definitive price reference
+            current_price = float(hist_data['Close'].iloc[-1]) if not hist_data.empty else info.get('currentPrice', 0)
+            sentiment = self._calculate_sentiment(info, current_price=current_price)
             
             # Calculate overall quality score
             quality_score = (
@@ -137,8 +140,10 @@ class PremiumStockAnalyzer:
                 'fundamentals': fundamentals,
                 'momentum': momentum,
                 'risk': risk,
+                'technical': technical,
                 'sentiment': sentiment,
-                'current_price': float(hist_data['Close'].iloc[-1]),
+                'current_price': current_price,
+                'sector': info.get('sector', 'Unknown'),
                 'analysis_date': datetime.now().strftime('%Y-%m-%d'),
                 'success': True
             }
@@ -432,6 +437,28 @@ class PremiumStockAnalyzer:
         risk['beta_score'] = beta_score
         scores.append(beta_score)
         
+        returns = hist['Close'].pct_change().dropna()
+
+        # Annualized volatility (percent)
+        if len(returns) >= 21:
+            annualized_vol = returns.std() * np.sqrt(252) * 100
+            if annualized_vol <= 20:
+                vol_score = 100
+            elif annualized_vol <= 30:
+                vol_score = 85
+            elif annualized_vol <= 40:
+                vol_score = 70
+            elif annualized_vol <= 55:
+                vol_score = 50
+            else:
+                vol_score = 30
+        else:
+            annualized_vol = None
+            vol_score = 50
+
+        risk['volatility'] = round(annualized_vol, 2) if annualized_vol is not None else None
+        scores.append(vol_score)
+
         # 2. Max Drawdown - lower is better
         if len(hist) >= 252:
             cumulative = (1 + hist['Close'].pct_change()).cumprod()
@@ -453,13 +480,12 @@ class PremiumStockAnalyzer:
             max_drawdown = None
             dd_score = 50
         
-        risk['max_drawdown'] = round(max_drawdown, 2) if max_drawdown else None
+        risk['max_drawdown'] = round(max_drawdown, 2) if max_drawdown is not None else None
         risk['drawdown_score'] = dd_score
         scores.append(dd_score)
         
         # 3. Sharpe Ratio - higher is better
-        if len(hist) >= 252:
-            returns = hist['Close'].pct_change().dropna()
+        if len(returns) >= 252:
             sharpe = (returns.mean() / returns.std()) * np.sqrt(252) if returns.std() > 0 else 0
             
             if sharpe >= 1.5:
@@ -479,6 +505,26 @@ class PremiumStockAnalyzer:
         risk['sharpe_ratio'] = round(sharpe, 2) if sharpe else None
         risk['sharpe_score'] = sharpe_score
         scores.append(sharpe_score)
+
+        # 4. Historical Value at Risk (95%)
+        if len(returns) >= 252:
+            var_95 = np.percentile(returns, 5) * 100
+            if var_95 >= -5:
+                var_score = 100
+            elif var_95 >= -10:
+                var_score = 85
+            elif var_95 >= -15:
+                var_score = 70
+            elif var_95 >= -20:
+                var_score = 50
+            else:
+                var_score = 30
+        else:
+            var_95 = None
+            var_score = 50
+
+        risk['var_95'] = round(var_95, 2) if var_95 is not None else None
+        scores.append(var_score)
         
         # Overall risk score (inverse - lower risk = higher score)
         risk['score'] = np.mean(scores)
@@ -486,8 +532,82 @@ class PremiumStockAnalyzer:
         risk['risk_level'] = 'Low' if risk['score'] >= 75 else 'Medium' if risk['score'] >= 50 else 'High'
         
         return risk
+
+    def _calculate_technical(self, hist: pd.DataFrame) -> Dict:
+        """Calculate focused technical metrics (supporting Excel export)"""
+        if hist is None or hist.empty or len(hist) < 50:
+            return {
+                'score': 50,
+                'grade': 'C',
+                'macd': None,
+                'macd_signal': None,
+                'macd_hist': None,
+                'bollinger_position': None,
+                'bollinger_upper': None,
+                'bollinger_lower': None,
+                'support': None,
+                'resistance': None,
+                'volume_sma': None
+            }
+
+        close = hist['Close']
+
+        ema_fast = close.ewm(span=12, adjust=False).mean()
+        ema_slow = close.ewm(span=26, adjust=False).mean()
+        macd_series = ema_fast - ema_slow
+        macd_signal_series = macd_series.ewm(span=9, adjust=False).mean()
+
+        macd = macd_series.iloc[-1]
+        macd_signal = macd_signal_series.iloc[-1]
+        macd_hist = macd - macd_signal
+        if macd > macd_signal:
+            macd_score = 100 if macd_hist > 0 else 80
+        elif macd_hist > -0.1:
+            macd_score = 60
+        else:
+            macd_score = 40
+
+        rolling = close.rolling(window=20)
+        ma20 = rolling.mean().iloc[-1]
+        std20 = rolling.std().iloc[-1]
+        upper_band = ma20 + 2 * std20
+        lower_band = ma20 - 2 * std20
+        current_price = close.iloc[-1]
+        band_range = upper_band - lower_band if upper_band and lower_band else None
+        if band_range and band_range != 0:
+            bollinger_position = ((current_price - lower_band) / band_range) * 100
+            bollinger_score = 100 if 40 <= bollinger_position <= 60 else 80 if 30 <= bollinger_position <= 70 else 60
+        else:
+            bollinger_position = None
+            bollinger_score = 60
+
+        support = close.rolling(window=50).min().iloc[-1]
+        resistance = close.rolling(window=50).max().iloc[-1]
+        volume_sma = hist['Volume'].rolling(window=20).mean().iloc[-1]
+
+        technical_score = np.mean([macd_score, bollinger_score])
+        technical_grade = self._score_to_grade(technical_score)
+
+        def safe_round(value, digits=2):
+            if value is None or (isinstance(value, float) and np.isnan(value)):
+                return None
+            return round(float(value), digits)
+
+        return {
+            'score': technical_score,
+            'grade': technical_grade,
+            'macd': safe_round(macd, 4),
+            'macd_signal': safe_round(macd_signal, 4),
+            'macd_hist': safe_round(macd_hist, 4),
+            'bollinger_position': safe_round(bollinger_position, 2) if bollinger_position is not None else None,
+            'bollinger_upper': safe_round(upper_band, 2),
+            'bollinger_lower': safe_round(lower_band, 2),
+            'support': safe_round(support, 2),
+            'resistance': safe_round(resistance, 2),
+            'volume_sma': safe_round(volume_sma, 0)
+        }
     
-    def _calculate_sentiment(self, info: Dict) -> Dict:
+    def _calculate_sentiment(self, info: Dict, current_price: Optional[float] = None) -> Dict:
         """
         Calculate 3 sentiment metrics (10% weight)
         1. Institutional Ownership Trend
@@ -518,9 +638,10 @@ class PremiumStockAnalyzer:
         scores.append(inst_score)
         
         # 2. Analyst Ratings
-        recommendation = info.get('recommendationKey', 'hold')
+        recommendation = info.get('recommendationKey', info.get('recommendationMean', 'hold'))
         target_price = info.get('targetMeanPrice', 0)
-        current_price = info.get('currentPrice', 0)
+        if not current_price:
+            current_price = info.get('currentPrice', 0)
         
         # Map recommendation to score
         rec_map = {
@@ -530,9 +651,23 @@ class PremiumStockAnalyzer:
             'sell': 30,
             'strong_sell': 10
         }
-        analyst_score = rec_map.get(recommendation.lower(), 50)
+        if isinstance(recommendation, (int, float)):
+            # recommendationMean scale: 1 (strong buy) to 5 (sell)
+            if recommendation <= 1.5:
+                analyst_score = 100
+            elif recommendation <= 2.0:
+                analyst_score = 85
+            elif recommendation <= 3.0:
+                analyst_score = 70
+            elif recommendation <= 4.0:
+                analyst_score = 50
+            else:
+                analyst_score = 30
+            sentiment['analyst_rating'] = f"mean_{recommendation:.1f}"
+        else:
+            sentiment['analyst_rating'] = str(recommendation).upper()
+            analyst_score = rec_map.get(str(recommendation).lower(), 50)
         
-        sentiment['analyst_rating'] = recommendation
         sentiment['analyst_score'] = analyst_score
         scores.append(analyst_score)
         
