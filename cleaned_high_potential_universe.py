@@ -5,6 +5,10 @@ NOW USES PREMIUM QUALITY UNIVERSE (700+ low-risk, steady-growth stocks)
 Focus: Institutional-grade blue-chip US companies only
 """
 
+import json
+import os
+from datetime import datetime
+
 SYMBOL_NORMALIZATION_MAP = {
     'BRK.B': 'BRK-B',
     'BRK-B': 'BRK-B',
@@ -189,6 +193,13 @@ def _ensure_tfsa_questrade_alignment(universe):
             print(f"   ... {len(replacements_applied) - 5} additional replacements")
     if unresolved:
         print(f"⚠️ {len(unresolved)} symbols could not be validated against TFSA/Questrade lists and were kept as-is")
+    _write_alignment_report(
+        universe_size=len(universe),
+        final_size=len(filtered),
+        replacements=replacements_applied,
+        unresolved=sorted(unresolved),
+        valid_source_size=len(valid_list),
+    )
     return filtered
 
 
@@ -238,6 +249,21 @@ def sanitize_runtime_universe(universe, failed_symbols=None, target_min=680):
             filtered.append(sym)
             seen.add(sym_upper)
     
+    # If we still have not reached the target, pull additional TFSA-friendly symbols.
+    if len(filtered) < target_min:
+        extra_candidates, _ = _load_valid_questrade_symbols()
+        for sym in extra_candidates:
+            if len(filtered) >= target_min:
+                break
+            sym_upper = sym.upper()
+            if sym_upper not in seen:
+                filtered.append(sym)
+                seen.add(sym_upper)
+
+    # Final safeguard: ensure we never return a shrunken universe silently.
+    if len(filtered) < target_min:
+        print(f"⚠️ Runtime universe could not reach target size {target_min}. Using {len(filtered)} symbols. Please review TFSA alignment lists.")
+
     return filtered
 
 
@@ -255,3 +281,26 @@ def _get_reserve_pool():
         'RTX', 'LMT', 'NOC', 'GD', 'UNP', 'UPS', 'FDX', 'NSC',
         'XOM', 'CVX', 'COP', 'EOG', 'PSX', 'VLO', 'MPC'
     ]
+
+
+def _write_alignment_report(*, universe_size, final_size, replacements, unresolved, valid_source_size, target_min=None):
+    """Persist alignment summary for transparency each run."""
+    try:
+        cache_dir = os.path.join(os.path.dirname(__file__), '.cache')
+        os.makedirs(cache_dir, exist_ok=True)
+        report = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'input_universe_size': universe_size,
+            'valid_source_size': valid_source_size,
+            'final_universe_size': final_size,
+            'target_minimum': target_min,
+            'replacement_count': len(replacements),
+            'replacements': replacements,
+            'unresolved_symbols': unresolved,
+        }
+        path = os.path.join(cache_dir, 'tfsa_alignment_report.json')
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(report, fh, indent=2)
+        print(f"📝 TFSA alignment report saved to {path}")
+    except Exception as exc:
+        print(f"⚠️ Unable to write TFSA alignment report: {exc}")

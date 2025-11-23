@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-10-26T18:53:27.063133",
+  "symbol": "ENGH.TO",
+  "analysis_type": "quick_scan",
+  "data": {
+    "sentiment": 0.5,
+    "meme_risk": 5,
+    "risk_signals": [],
+    "recommendation": "BUY",
+    "confidence": 85
+  }
+}

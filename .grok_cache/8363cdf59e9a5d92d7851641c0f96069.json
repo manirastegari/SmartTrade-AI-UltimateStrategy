@@ -1,0 +1,62 @@
+{
+  "timestamp": "2025-10-26T21:52:53.994309",
+  "symbol": "PVH",
+  "analysis_type": "deep_analysis",
+  "data": {
+    "sentiment": 0.52,
+    "breaking_events": [
+      "PVH announces partnership expansion with Tommy Hilfiger in Asia (no major price impact)",
+      "Minor analyst downgrade from neutral to hold by Wells Fargo citing retail slowdown"
+    ],
+    "social_themes": [
+      "Retail sector pressures",
+      "Back-to-school sales performance",
+      "Sustainability in fashion"
+    ],
+    "meme_risk": 12,
+    "influencer_sentiment": "Neutral",
+    "mention_volume": "Medium",
+    "risk_signals": [
+      "Potential supply chain disruptions from global trade tensions",
+      "Ongoing retail competition from fast-fashion brands"
+    ],
+    "catalysts": [
+      "Q3 Earnings release expected October 29, 2023",
+      "Holiday season sales guidance update",
+      "Possible dividend adjustment announcement"
+    ],
+    "chart_pattern": "Symmetrical triangle (consolidation, potential breakout)",
+    "support_level": 80.0,
+    "resistance_level": 92.0,
+    "breakout_level": 93.5,
+    "volume_trend": "Decreasing overall, neutral with spikes on news days",
+    "rsi_signal": "48 (neutral, not overbought/oversold)",
+    "macd_signal": "Weakening bullish momentum, histogram contracting",
+    "trend_strength": "Weak uptrend, possible reversal if support breaks",
+    "price_prediction_short": {
+      "target": 88.0,
+      "probability": 60,
+      "timeframe": "2-4 days"
+    },
+    "price_prediction_medium": {
+      "target": 95.0,
+      "probability": 55,
+      "timeframe": "2-3 weeks"
+    },
+    "price_prediction_long": {
+      "target": 105.0,
+      "probability": 50,
+      "timeframe": "3-4 months"
+    },
+    "recommendation": "HOLD",
+    "confidence": 72,
+    "agreement": "Moderate",
+    "reasoning": "Social sentiment on X/Twitter is mildly neutral (0.52 score) with discussions centered on retail challenges and modest positive notes on brand strength, but low meme potential (12%) and medium mention volume indicate limited retail investor hype. No major breaking events or high-risk signals like fraud, though trade tensions pose ongoing risks. Upcoming Q3 earnings could act as a catalyst if guidance beats expectations. Technically, PVH is in a symmetrical triangle pattern on the daily chart, consolidating after a 5% 30-day gain, with neutral RSI (48) and contracting MACD suggesting indecision. Support at $80 holds firm (recent lows), resistance at $92, with volume not confirming strong accumulation\u2014more distribution on down days. Trend is weakly upward but vulnerable to reversal below $80 amid broader market retail weakness. Overall, aligns moderately with your 70.61 score: potential upside to $95 medium-term if earnings positive, but hold for now to avoid downside risk in neutral trend.",
+    "entry_price": 82.0,
+    "target_price": 95.0,
+    "stop_loss": 78.0,
+    "risk_reward_ratio": 2.1,
+    "api_cost": 0.00047210000000000004,
+    "timestamp": "2025-10-26T21:52:53.993490"
+  }
+}

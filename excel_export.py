@@ -50,7 +50,7 @@ def push_to_github(filename):
         print(f"⚠️ Git push error: {str(e)}")
         return False
 
-def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=True, all_stocks_data=None):
+def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=None, all_stocks_data=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None):
     """Export analysis results to Excel with multiple sheets
     
     Optimized for Premium Quality Universe (614 institutional-grade stocks)
@@ -59,8 +59,10 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         results: Consensus/filtered recommendations list
         analysis_params: Analysis parameters string
         filename: Output filename (optional)
-        auto_push_github: Auto-commit to GitHub (default True)
+        auto_push_github: Auto-commit to GitHub. If None, falls back to SMARTTRADE_AUTO_PUSH env flag.
         all_stocks_data: Complete list of ALL analyzed stocks (NEW - for full dataset export)
+        market_tradability: AI market tradability analysis (NEW - for AI insights)
+        market_timing_signal: Market timing signal (NEW - BUY/WAIT/SELL signal)
     """
     
     if not results and not all_stocks_data:
@@ -76,35 +78,49 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             
             # Sheet 1: Summary Dashboard
-            create_summary_sheet(results, writer, analysis_params, all_stocks_count=len(all_stocks_data) if all_stocks_data else None)
+            create_summary_sheet(
+                results,
+                writer,
+                analysis_params,
+                all_stocks_count=len(all_stocks_data) if all_stocks_data else None,
+                market_tradability=market_tradability,
+                market_timing_signal=market_timing_signal,
+                ai_top_picks=ai_top_picks
+            )
             
             # Sheet 2: ALL ANALYZED STOCKS (NEW - Critical for user visibility)
             if all_stocks_data:
                 create_all_analyzed_sheet(all_stocks_data, writer)
+
+            # Sheet 3: AI Top Picks (NEW - direct view of xAI selection)
+            if ai_top_picks:
+                create_ai_top_picks_sheet(ai_top_picks, writer)
             
-            # Sheet 3: Strong Buy Recommendations (consensus picks)
+            # Sheet 4: Strong Buy Recommendations (consensus picks)
             create_recommendations_sheet(results, writer, 'STRONG BUY')
             
-            # Sheet 4: All Buy Signals (consensus picks)
+            # Sheet 5: All Buy Signals (consensus picks)
             create_recommendations_sheet(results, writer, ['STRONG BUY', 'BUY', 'WEAK BUY'], 'All_Buy_Signals')
             
-            # Sheet 5: Detailed Analysis (consensus picks)
+            # Sheet 6: Detailed Analysis (consensus picks)
             create_detailed_analysis_sheet(results, writer)
             
-            # Sheet 6: Technical Indicators (consensus picks)
+            # Sheet 7: Technical Indicators (consensus picks)
             create_technical_sheet(results, writer)
             
-            # Sheet 7: Risk Analysis (consensus picks)
+            # Sheet 8: Risk Analysis (consensus picks)
             create_risk_analysis_sheet(results, writer)
             
-            # Sheet 8: Sector Analysis (consensus picks)
+            # Sheet 9: Sector Analysis (consensus picks)
             create_sector_analysis_sheet(results, writer)
             
-            # Sheet 9: Performance Metrics (consensus picks)
+            # Sheet 10: Performance Metrics (consensus picks)
             create_performance_sheet(results, writer)
         
         # Auto-push to GitHub if requested
-        if auto_push_github:
+        env_push = os.getenv('SMARTTRADE_AUTO_PUSH', '0').lower() in ('1', 'true', 'yes')
+        should_push = auto_push_github if auto_push_github is not None else env_push
+        if should_push:
             push_to_github(filename)
         
         total_analyzed = len(all_stocks_data) if all_stocks_data else len(results)
@@ -114,7 +130,7 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
     except Exception as e:
         return None, f"Export failed: {str(e)}"
 
-def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None):
+def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None):
     """Create summary dashboard sheet
     
     Args:
@@ -122,6 +138,8 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
         writer: Excel writer
         analysis_params: Analysis parameters string
         all_stocks_count: Total number of stocks analyzed (NEW - to show complete picture)
+        market_tradability: AI market tradability analysis (NEW - for AI insights)
+        market_timing_signal: Market timing signal (NEW - BUY/WAIT/SELL signal)
     """
     
     # Check if this is consensus format
@@ -157,6 +175,26 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 'Total Stocks Analyzed',
                 'Consensus Picks (2+ Agreement)',
                 '━━━━━━━━━━━━━━━━━━━━━━━━━━',
+                '📊 MARKET TIMING SIGNAL',
+                'ACTION',
+                'Signal',
+                'Position Sizing',
+                'Confidence',
+                'VIX Level',
+                'SPY 1D Return',
+                'Market Regime',
+                'Reason',
+                '━━━━━━━━━━━━━━━━━━━━━━━━━━',
+                '🤖 AI MARKET ANALYSIS',
+                'AI Trade Recommendation',
+                'AI Confidence Level',
+                'AI Market Summary',
+                '━━━━━━━━━━━━━━━━━━━━━━━━━━',
+                '🎯 AI TOP PICKS SUMMARY',
+                'AI Picks Generated',
+                'AI Key Insight',
+                'Top Ranked Symbols',
+                '━━━━━━━━━━━━━━━━━━━━━━━━━━',
                 '4/4 Agreement (STRONG BUY)',
                 '3/4 Agreement (BUY)',
                 '2/4 Agreement (WEAK BUY)',
@@ -173,6 +211,26 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 'Premium Quality Universe (614 institutional-grade stocks)',
                 f"{total_analyzed_display} stocks (complete analysis)",
                 f"{consensus_picks_display} stocks (filtered by multi-strategy agreement)",
+                '',  # Separator
+                '',  # Section header
+                market_timing_signal.get('action', 'N/A') if market_timing_signal else 'N/A',
+                market_timing_signal.get('signal', 'N/A') if market_timing_signal else 'N/A',
+                market_timing_signal.get('position_sizing', 'N/A') if market_timing_signal else 'N/A',
+                f"{market_timing_signal.get('confidence', 0)}%" if market_timing_signal else 'N/A',
+                f"{market_timing_signal.get('vix_level', 0)}" if market_timing_signal else 'N/A',
+                f"{market_timing_signal.get('spy_return_1d', 0)}%" if market_timing_signal else 'N/A',
+                market_timing_signal.get('market_regime', 'N/A') if market_timing_signal else 'N/A',
+                market_timing_signal.get('brief_reason', 'No timing signal available') if market_timing_signal else 'No timing signal available',
+                '',  # Separator
+                '',  # Section header
+                market_tradability.get('trade_recommendation', 'N/A') if market_tradability else 'N/A',
+                f"{market_tradability.get('confidence', 0):.0f}%" if market_tradability else 'N/A',
+                market_tradability.get('brief_summary', 'AI analysis not available') if market_tradability else 'AI analysis not available',
+                '',
+                '',
+                f"{ai_top_picks.get('total_recommended', 0)} of {ai_top_picks.get('total_analyzed', 0)} candidates" if ai_top_picks else 'AI selection unavailable',
+                ai_top_picks.get('key_insight', 'N/A') if ai_top_picks else 'N/A',
+                ', '.join([p.get('symbol', 'N/A') for p in ai_top_picks.get('ai_top_picks', [])[:5]]) if ai_top_picks else 'N/A',
                 '',  # Separator
                 f"{tier_4} stocks (all perspectives agree)",
                 f"{tier_3} stocks (strong majority)",
@@ -246,11 +304,21 @@ def create_all_analyzed_sheet(all_stocks_data, writer):
     excel_data = []
     
     for stock in all_stocks_data:
+        # ML predictions (if available)
+        ml_prob = stock.get('ml_probability')
+        ml_return = stock.get('ml_expected_return')
+        ml_conf = stock.get('ml_confidence')
+        
         excel_data.append({
             'Symbol': stock.get('symbol', 'N/A'),
             'Sector': stock.get('sector', 'Unknown'),
             'Quality Score': stock.get('quality_score', 0),
             'Current Price': stock.get('current_price', 0),
+            
+            # ML Predictions (NEW - Critical for users to see)
+            'ML Probability %': round(ml_prob * 100, 1) if ml_prob is not None else None,
+            'ML Expected Return %': round(ml_return, 1) if ml_return is not None else None,
+            'ML Confidence %': round(ml_conf * 100, 1) if ml_conf is not None else None,
             
             # Fundamentals
             'P/E Ratio': stock.get('pe_ratio'),
@@ -338,6 +406,61 @@ def create_all_analyzed_sheet(all_stocks_data, writer):
     worksheet.conditional_formatting.add(f'B2:B{len(df)+1}', 
         CellIsRule(operator='lessThan', formula=['60'], fill=red_fill))
 
+def create_ai_top_picks_sheet(ai_top_picks, writer):
+    """Create dedicated sheet highlighting AI-selected top opportunities."""
+    if not ai_top_picks:
+        return
+
+    picks = ai_top_picks.get('ai_top_picks', [])
+
+    # Summary block always written so the sheet exists even if no picks.
+    summary_df = pd.DataFrame({
+        'Metric': [
+            'Brief Summary',
+            'Key Insight',
+            'Total Candidates Evaluated',
+            'Total Recommended'
+        ],
+        'Value': [
+            ai_top_picks.get('brief_summary', 'No AI summary available'),
+            ai_top_picks.get('key_insight', 'N/A'),
+            ai_top_picks.get('total_analyzed', 0),
+            ai_top_picks.get('total_recommended', 0)
+        ]
+    })
+    summary_df.to_excel(writer, sheet_name='AI_Top_Picks', index=False)
+
+    if picks:
+        picks_df = pd.DataFrame([
+            {
+                'Rank': pick.get('rank', i + 1),
+                'Symbol': pick.get('symbol', 'N/A'),
+                'AI Score': pick.get('ai_score', 0),
+                'Action': pick.get('action', 'N/A'),
+                'Position Size': pick.get('position_size', 'N/A'),
+                'Entry Timing': pick.get('entry_timing', 'N/A'),
+                'Why Selected': pick.get('why_selected', 'N/A')
+            }
+            for i, pick in enumerate(picks)
+        ])
+
+        start_row = len(summary_df) + 2
+        picks_df.to_excel(writer, sheet_name='AI_Top_Picks', index=False, startrow=start_row)
+
+    worksheet = writer.sheets['AI_Top_Picks']
+
+    # Auto-fit each column based on the longest cell content
+    for column_cells in worksheet.columns:
+        max_length = 0
+        column_letter = column_cells[0].column_letter
+        for cell in column_cells:
+            try:
+                cell_length = len(str(cell.value)) if cell.value is not None else 0
+            except Exception:
+                cell_length = 0
+            max_length = max(max_length, cell_length)
+        worksheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
+
 def create_recommendations_sheet(results, writer, recommendation_types, sheet_name=None):
     """Create recommendations sheet (supports both old and new consensus format)"""
     
@@ -369,13 +492,43 @@ def create_recommendations_sheet(results, writer, recommendation_types, sheet_na
             risk = result.get('risk', {})
             sent = result.get('sentiment', {})
             
+            # ML predictions
+            ml_prob = result.get('ml_probability')
+            ml_return = result.get('ml_expected_return')
+            ml_conf = result.get('ml_confidence')
+            ultimate_score = result.get('ultimate_score')
+            
             recommendations_data.append({
                 'Symbol': result.get('symbol', ''),
                 'Recommendation': result.get('recommendation', ''),
                 'Agreement': f"{result.get('strategies_agreeing', 0)}/4",
+                
+                # Ultimate Score (NEW - combines all layers)
+                'Ultimate Score': ultimate_score if ultimate_score is not None else 'N/A',
+                # Entry Score (NEW - regime-aware entry suitability)
+                'Entry Score': result.get('entry_score', 'N/A'),
+                
                 'Quality Score': result.get('quality_score', 0),
                 'Consensus Score': result.get('consensus_score', 0),
                 'Confidence': f"{result.get('confidence', 0) * 100:.0f}%",
+                
+                # ML Predictions (NEW)
+                'ML Probability': f"{ml_prob * 100:.1f}%" if ml_prob is not None else 'N/A',
+                'ML Expected Return': f"{ml_return:+.1f}%" if ml_return is not None else 'N/A',
+                'ML Confidence': f"{ml_conf * 100:.1f}%" if ml_conf is not None else 'N/A',
+                
+                # AI Validation (NEW)
+                'AI Validation': result.get('ai_validation', 'N/A'),
+                'AI Risk Level': result.get('ai_risk_level', 'N/A'),
+                'AI Profit Potential': result.get('ai_profit_potential', 'N/A'),
+                'News Sentiment': result.get('ai_news_sentiment', 'N/A'),
+                'AI Verdict': result.get('ai_verdict', 'N/A'),
+                
+                # Catalyst Analysis (NEW)
+                'Catalyst Score': result.get('catalyst_score', 'N/A'),
+                'Earnings Outlook': result.get('earnings_outlook', 'N/A'),
+                'Top Catalysts': ' | '.join(result.get('growth_catalysts', [])[:3]) if result.get('growth_catalysts') else 'N/A',
+                
                 'Current Price': f"${result.get('current_price', 0):.2f}",
                 'Fundamentals': f"{fund.get('grade', 'N/A')} ({fund.get('score', 0):.0f})",
                 'Momentum': f"{mom.get('grade', 'N/A')} ({mom.get('score', 0):.0f})",
@@ -432,14 +585,54 @@ def create_detailed_analysis_sheet(results, writer):
             risk = result.get('risk', {})
             tech = result.get('technical', {})
             sent = result.get('sentiment', {})
+            
+            # ML predictions
+            ml_prob = result.get('ml_probability')
+            ml_return = result.get('ml_expected_return')
+            ml_conf = result.get('ml_confidence')
+            ml_features = result.get('ml_feature_importance', {})
+            ultimate_score = result.get('ultimate_score')
+            
+            # Get top ML feature
+            top_ml_feature = 'N/A'
+            if ml_features:
+                top = max(ml_features.items(), key=lambda x: abs(x[1]))
+                top_ml_feature = f"{top[0]}: {top[1]:.2f}"
 
             detailed_data.append({
                 'Symbol': result.get('symbol', ''),
                 'Recommendation': result.get('recommendation', ''),
                 'Agreement': f"{result.get('strategies_agreeing', 0)}/4",
+                
+                # Ultimate Score (NEW - combines Quality + Consensus + ML)
+                'Ultimate Score': ultimate_score if ultimate_score is not None else None,
+                
                 'Consensus Score': result.get('consensus_score', result.get('overall_score', 0)),
                 'Quality Score': result.get('quality_score', 0),
                 'Confidence %': result.get('confidence', 0) * 100,
+                
+                # ML Predictions (NEW)
+                'ML Probability %': round(ml_prob * 100, 1) if ml_prob is not None else None,
+                'ML Expected Return %': round(ml_return, 1) if ml_return is not None else None,
+                'ML Confidence %': round(ml_conf * 100, 1) if ml_conf is not None else None,
+                'ML Top Driver': top_ml_feature,
+                
+                # AI Validation (NEW)
+                'AI Validation': result.get('ai_validation', 'N/A'),
+                'AI Risk Level': result.get('ai_risk_level', 'N/A'),
+                'AI Profit Potential': result.get('ai_profit_potential', 'N/A'),
+                'News Sentiment': result.get('ai_news_sentiment', 'N/A'),
+                'AI Hidden Risks': result.get('ai_hidden_risks', 'N/A'),
+                'AI Verdict': result.get('ai_verdict', 'N/A'),
+                
+                # Catalyst Analysis (NEW)
+                'Catalyst Score': result.get('catalyst_score', 'N/A'),
+                'Earnings Outlook': result.get('earnings_outlook', 'N/A'),
+                'Growth Catalysts': ' | '.join(result.get('growth_catalysts', [])[:3]) if result.get('growth_catalysts') else 'N/A',
+                'Catalyst Risks': ' | '.join(result.get('catalyst_risks', [])[:3]) if result.get('catalyst_risks') else 'N/A',
+                'Sentiment Summary': result.get('sentiment_summary', 'N/A'),
+                'Catalyst Summary': result.get('catalyst_summary', 'N/A'),
+                
                 'Sector': result.get('sector', 'Unknown'),
                 'Current Price': result.get('current_price', 0),
                 'Fundamentals Score': fund.get('score', 0),

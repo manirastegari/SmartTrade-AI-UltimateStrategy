@@ -149,6 +149,13 @@ def get_questrade_valid_universe():
         'BR', 'EPAM', 'GWRE', 'BSY', 'MANH', 'CVLT', 'ENV', 'BLKB', 'ALRM',
     ]
     
+    # Ensure premium institutional-grade universe is TFSA-approved by default
+    try:
+        from premium_quality_universe import get_premium_universe
+        universe.extend(get_premium_universe())
+    except Exception:
+        pass
+    
     # Remove duplicates and sort
     universe = sorted(list(set(universe)))
     

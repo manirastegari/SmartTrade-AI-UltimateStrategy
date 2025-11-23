@@ -1,0 +1,15 @@
+{
+  "timestamp": "2025-10-26T18:53:27.062804",
+  "symbol": "SHOP.TO",
+  "analysis_type": "quick_scan",
+  "data": {
+    "sentiment": 0.2,
+    "meme_risk": 70,
+    "risk_signals": [
+      "High valuation in e-commerce downturn",
+      "Social media volatility"
+    ],
+    "recommendation": "SELL",
+    "confidence": 60
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "timestamp": "2025-10-26T21:01:33.090300",
+  "symbol": "TCMD",
+  "analysis_type": "quick_scan",
+  "data": {
+    "sentiment": 0.4,
+    "meme_risk": 30,
+    "risk_signals": [
+      "market volatility",
+      "regulatory changes"
+    ],
+    "recommendation": "HOLD",
+    "confidence": 70
+  }
+}

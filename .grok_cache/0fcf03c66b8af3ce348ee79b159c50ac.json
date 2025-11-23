@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-10-26T18:53:51.268982",
+  "symbol": "AMZN",
+  "analysis_type": "quick_scan",
+  "data": {
+    "sentiment": 0.8,
+    "meme_risk": 20,
+    "risk_signals": [
+      "Labor disputes on X/Twitter"
+    ],
+    "recommendation": "BUY",
+    "confidence": 85
+  }
+}

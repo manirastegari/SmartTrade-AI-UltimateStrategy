@@ -809,20 +809,21 @@ class AdvancedDataFetcher:
                         
                         # Convert different VIX instruments to VIX-like values
                         if "VIX" in source_name and "^VIX" in source_name:
-                            # Direct VIX index - use as is
-                            vix_proxy = max(5.0, min(80.0, vix_last))
+                            # Direct VIX index - use as is (no artificial cap - VIX can exceed 80 in crises)
+                            vix_proxy = max(5.0, vix_last)
                         elif "VIXY" in source_name:
                             # VIXY ETF - convert to VIX-like (rough approximation)
-                            vix_proxy = max(10.0, min(50.0, vix_last * 2.0))
+                            # Removed 50.0 cap to allow crisis-level VIX readings
+                            vix_proxy = max(10.0, vix_last * 2.0)
                         elif "VXX" in source_name:
                             # VXX ETF - convert to VIX-like
-                            vix_proxy = max(10.0, min(50.0, vix_last * 1.5))
+                            vix_proxy = max(10.0, vix_last * 1.5)
                         elif "UVXY" in source_name:
                             # UVXY 2x ETF - convert to VIX-like
-                            vix_proxy = max(10.0, min(50.0, vix_last))
+                            vix_proxy = max(10.0, vix_last)
                         else:
                             # Generic conversion
-                            vix_proxy = max(10.0, min(50.0, vix_last))
+                            vix_proxy = max(10.0, vix_last)
                         
                         vix_data_source = source_name
                         try:

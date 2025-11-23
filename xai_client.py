@@ -9,7 +9,7 @@ Usage:
 
 Notes:
 - Reads API key from env var XAI_API_KEY or api_keys.XAI_API_KEY if present.
-- Defaults model to 'grok-4-fast-reasoning' (cheap + strong). Override via XAI_MODEL.
+- Defaults model to 'grok-4-1-fast-reasoning' (latest fast reasoning tier). Override via XAI_MODEL.
 - Returns a structured dict suitable for UI and Excel export.
 """
 
@@ -21,6 +21,14 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
+
+DEFAULT_PRIMARY_MODEL = "grok-4-1-fast-reasoning"
+DEFAULT_FALLBACK_MODEL = "grok-4-1-fast-non-reasoning"
+MODEL_FALLBACKS = {
+	DEFAULT_PRIMARY_MODEL: DEFAULT_FALLBACK_MODEL,
+	DEFAULT_FALLBACK_MODEL: "grok-4-fast-non-reasoning",
+	"grok-4-fast-reasoning": "grok-4-fast-non-reasoning",
+}
 
 
 class XAIClient:
@@ -51,7 +59,8 @@ class XAIClient:
 
 		self.api_key = key
 		# Default to a strong and cost-effective model per your guidance
-		self.model = model or os.getenv("XAI_MODEL", "grok-4-fast-reasoning")
+		self.model = model or os.getenv("XAI_MODEL", DEFAULT_PRIMARY_MODEL)
+		self.fallback_model = os.getenv("XAI_FALLBACK_MODEL") or MODEL_FALLBACKS.get(self.model)
 		# xAI typically uses an OpenAI-compatible endpoint path
 		self.base_url = base_url or os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
 		self.timeout = timeout
@@ -96,6 +105,7 @@ class XAIClient:
 		}
 
 		try:
+			print(f"[XAIClient] Requesting model: {self.model} (fallback: {self.fallback_model})")
 			resp = requests.post(url, headers=self._headers(), json=payload, timeout=self.timeout)
 			resp.raise_for_status()
 		except requests.HTTPError as e:
@@ -105,21 +115,24 @@ class XAIClient:
 				body = e.response.text if e.response is not None else ""
 			except Exception:
 				status, body = None, ""
-			if (self.model == "grok-4-fast-reasoning") and (status in (400, 404, 422) or "model" in body.lower()):
-				alt_model = "grok-4-fast-non-reasoning"
-				payload_alt = dict(payload)
-				payload_alt["model"] = alt_model
-				alt = requests.post(url, headers=self._headers(), json=payload_alt, timeout=self.timeout)
-				alt.raise_for_status()
-				data = alt.json()
-				try:
-					content = data["choices"][0]["message"]["content"]
-				except Exception:
-					content = json.dumps(data)
-				out = self._safe_json(content)
-				# annotate chosen model
-				out["model_used"] = alt_model
-				return out
+			fallback_candidate = self.fallback_model
+			if fallback_candidate and fallback_candidate != self.model:
+				body_lower = body.lower() if isinstance(body, str) else ""
+				if status in (400, 404, 422) or "model" in body_lower:
+					payload_alt = dict(payload)
+					payload_alt["model"] = fallback_candidate
+					alt = requests.post(url, headers=self._headers(), json=payload_alt, timeout=self.timeout)
+					alt.raise_for_status()
+					data = alt.json()
+					try:
+						content = data["choices"][0]["message"]["content"]
+					except Exception:
+						content = json.dumps(data)
+					out = self._safe_json(content)
+					# annotate chosen model
+					print(f"[XAIClient] Fallback successful → {fallback_candidate}")
+					out["model_used"] = fallback_candidate
+					return out
 			raise
 
 		data = resp.json()
@@ -129,6 +142,7 @@ class XAIClient:
 			content = json.dumps(data)
 
 		out = self._safe_json(content)
+		print(f"[XAIClient] Success → {self.model}")
 		out["model_used"] = self.model
 		return out
 

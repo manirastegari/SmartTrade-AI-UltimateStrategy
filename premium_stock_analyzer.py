@@ -61,8 +61,10 @@ class PremiumStockAnalyzer:
                 hist_data = stock_data.get('data')  # Changed from 'hist' to 'data'
                 info = stock_data.get('info', {})
             
-            # CRITICAL FIX: If info is empty (market_cap=0), try direct yfinance as fallback
+            # CRITICAL FIX: If info is empty (market_cap=0), try direct yfinance as fallback.
+            # If the fallback fails, continue with neutral fundamentals rather than aborting.
             if not info or info.get('marketCap', 0) == 0:
+                fallback_error = None
                 try:
                     import yfinance as yf
                     import time
@@ -104,11 +106,19 @@ class PremiumStockAnalyzer:
                             else:
                                 raise  # Give up
                 except Exception as e:
-                    # If even direct fetch fails, skip this stock silently
-                    # (Don't return error - just skip in batch analysis)
+                    fallback_error = e
                     if '429' not in str(e):
                         print(f"⚠️ {symbol}: Fundamental data error ({e})")
-                    return self._empty_result(symbol, f"Data fetch failed: {e}")
+                finally:
+                    if not info or info.get('marketCap', 0) == 0:
+                        # Ensure we have a dict with neutral defaults so analysis still runs.
+                        info = info or {}
+                        info.setdefault('marketCap', 0)
+                        info.setdefault('sector', 'Unknown')
+                        info.setdefault('beta', info.get('beta', 1.0) or 1.0)
+                        info.setdefault('_fundamentals_missing', True)
+                        if fallback_error:
+                            info.setdefault('_fundamental_error', str(fallback_error))
             
             # Calculate all 15 metrics
             fundamentals = self._calculate_fundamentals(info, hist_data)

@@ -80,9 +80,13 @@ def get_soxx_qqq_signals(period_days: int = 60) -> Dict:
 		"soxx_above_sma200": None,
 	}
 
-	# Try primary tickers, then fallbacks to reduce noisy failures
-	soxx = _fetch_history("SOXX", period="6mo", interval="1d") or _fetch_history("SMH", period="6mo", interval="1d")
-	qqq = _fetch_history("QQQ", period="6mo", interval="1d") or _fetch_history("SPY", period="6mo", interval="1d")
+	# Try primary tickers, then fallbacks to reduce noisy failures (avoid DataFrame truthiness)
+	soxx = _fetch_history("SOXX", period="6mo", interval="1d")
+	if soxx is None:
+		soxx = _fetch_history("SMH", period="6mo", interval="1d")
+	qqq = _fetch_history("QQQ", period="6mo", interval="1d")
+	if qqq is None:
+		qqq = _fetch_history("SPY", period="6mo", interval="1d")
 	if soxx is None or qqq is None:
 		return out
 

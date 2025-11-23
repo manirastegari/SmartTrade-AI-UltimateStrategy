@@ -1,0 +1,62 @@
+{
+  "timestamp": "2025-10-26T21:53:02.848301",
+  "symbol": "MFC.TO",
+  "analysis_type": "deep_analysis",
+  "data": {
+    "sentiment": 0.72,
+    "breaking_events": [
+      "Manulife announces Q3 2023 earnings beat with EPS of $0.62 vs. expected $0.58 (Oct 25, 2023)",
+      "Positive analyst upgrade from RBC Capital to Outperform with PT $52 (last 24 hours)"
+    ],
+    "social_themes": [
+      "Interest rate sensitivity in financials",
+      "Strong insurance sector recovery post-pandemic",
+      "Dividend yield attractiveness amid market volatility"
+    ],
+    "meme_risk": 12,
+    "influencer_sentiment": "Bullish",
+    "mention_volume": "Moderate",
+    "risk_signals": [
+      "Mild controversy over Asia exposure amid China economic slowdown",
+      "Regulatory scrutiny on insurance pricing in Canada (low impact)"
+    ],
+    "catalysts": [
+      "Upcoming Q4 earnings release (Feb 2024)",
+      "Potential Fed rate cut signals boosting financial stocks",
+      "Dividend increase announcement expected in early 2024"
+    ],
+    "chart_pattern": "Ascending triangle forming (bullish continuation)",
+    "support_level": 42.5,
+    "resistance_level": 48.0,
+    "breakout_level": 48.5,
+    "volume_trend": "Increasing volume on up days, suggesting accumulation",
+    "rsi_signal": "58 (neutral, not overbought, potential for upside)",
+    "macd_signal": "Bullish crossover with histogram expanding positively",
+    "trend_strength": "Moderate uptrend, with potential reversal if support breaks",
+    "price_prediction_short": {
+      "target": 47.5,
+      "probability": 70,
+      "timeframe": "3-5 days"
+    },
+    "price_prediction_medium": {
+      "target": 50.0,
+      "probability": 65,
+      "timeframe": "2-3 weeks"
+    },
+    "price_prediction_long": {
+      "target": 55.0,
+      "probability": 60,
+      "timeframe": "3-4 months"
+    },
+    "recommendation": "BUY",
+    "confidence": 78,
+    "agreement": "Strong",
+    "reasoning": "Social intelligence shows moderately positive sentiment (0.72) on X/Twitter, driven by recent earnings beat and analyst upgrades, with themes around financial sector resilience and dividend appeal outweighing minor risks from Asia exposure. Mention volume is moderate but influencer sentiment is bullish from key figures like @StockMarketGuru and RBC analysts. Low meme potential (12%) indicates stability rather than volatility. Technically, the stock is in a neutral recent trend but forming an ascending triangle pattern near the 52-week low recovery zone, with support at $42.50 holding firm and resistance at $48.00 testing. Volume confirms accumulation on upticks, RSI at 58 allows room for upside without overbought conditions, and MACD bullish crossover supports momentum. Trend strength is moderate upward, aligning with the 5% 30-day return. Combining these, the stock appears undervalued relative to its 52-week high of $92.60, with catalysts like Q4 earnings providing upside. User's 70.52 score aligns well, as social buzz reinforces technical buy signals in a low-risk environment.",
+    "entry_price": 45.0,
+    "target_price": 50.0,
+    "stop_loss": 42.0,
+    "risk_reward_ratio": 2.5,
+    "api_cost": 0.0005053,
+    "timestamp": "2025-10-26T21:53:02.847339"
+  }
+}

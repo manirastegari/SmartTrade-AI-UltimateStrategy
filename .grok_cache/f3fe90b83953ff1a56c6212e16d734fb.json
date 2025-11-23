@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-10-26T18:53:27.062477",
+  "symbol": "WDAY",
+  "analysis_type": "quick_scan",
+  "data": {
+    "sentiment": 0.4,
+    "meme_risk": 20,
+    "risk_signals": [
+      "Recent earnings miss on X/Twitter"
+    ],
+    "recommendation": "HOLD",
+    "confidence": 75
+  }
+}
