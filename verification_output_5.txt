@@ -1,0 +1,72 @@
+Starting reproduction script...
+Importing AdvancedDataFetcher...
+Imported AdvancedDataFetcher
+Importing PremiumStockAnalyzer...
+Imported PremiumStockAnalyzer
+
+--- Testing VIX Fetching ---
+⏭️ No Alpha Vantage key set; skipping AV except for IBM demo
+💾 Smart Cache initialized at .cache
+💾 Smart caching enabled - 4x faster on repeat runs!
+🆓 Cost-effective data sources initialized - FREE REAL DATA
+Failed to get ticker '^VIX' reason: Expecting value: line 1 column 1 (char 0)
+$^VIX: possibly delisted; no price data found  (period=5d)
+Direct yfinance ^VIX fetch:
+Empty DataFrame
+Columns: [Open, High, Low, Close, Adj Close, Volume]
+Index: []
+
+--- Testing Fundamental Data Fetching ---
+⏭️ No Alpha Vantage key set; skipping AV except for IBM demo
+💾 Smart Cache initialized at .cache
+💾 Smart caching enabled - 4x faster on repeat runs!
+🆓 Cost-effective data sources initialized - FREE REAL DATA
+
+Analyzing UNH...
+✅ FREE DATA SUCCESS: 502 days for UNH (source: yahoo_direct)
+✅ FREE DATA SUCCESS: 502 days for UNH
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/UNH?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=UNH&crumb=Edge%3A+Too+Many+Requests
+Failed to get ticker 'UNH' reason: Expecting value: line 1 column 1 (char 0)
+SPY data retrieved from web_scrape_SPY
+⚠️ All VIX sources failed, VIX-based macro disabled for this run
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/UNH?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=UNH&crumb=Edge%3A+Too+Many+Requests
+⚠️ UNH: Fetch error (expecting value: line 1 column...), waiting 5s...
+Failed to get ticker 'SPY' reason: Expecting value: line 1 column 1 (char 0)
+$SPY: possibly delisted; no price data found  (period=1y)
+✅ Success: Quality Score 60.35
+
+Analyzing JNJ...
+✅ FREE DATA SUCCESS: 502 days for JNJ (source: yahoo_direct)
+✅ FREE DATA SUCCESS: 502 days for JNJ
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/JNJ?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=JNJ&crumb=Edge%3A+Too+Many+Requests
+Failed to get ticker 'JNJ' reason: Expecting value: line 1 column 1 (char 0)
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/JNJ?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=JNJ&crumb=Edge%3A+Too+Many+Requests
+⚠️ JNJ: Fetch error (expecting value: line 1 column...), waiting 5s...
+Failed to get ticker 'SPY' reason: Expecting value: line 1 column 1 (char 0)
+$SPY: possibly delisted; no price data found  (period=1y)
+✅ Success: Quality Score 65.5
+
+Analyzing ABBV...
+✅ FREE DATA SUCCESS: 502 days for ABBV (source: yahoo_direct)
+✅ FREE DATA SUCCESS: 502 days for ABBV
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/ABBV?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=ABBV&crumb=Edge%3A+Too+Many+Requests
+Failed to get ticker 'ABBV' reason: Expecting value: line 1 column 1 (char 0)
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/ABBV?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=ABBV&crumb=Edge%3A+Too+Many+Requests
+⚠️ ABBV: Fetch error (expecting value: line 1 column...), waiting 5s...
+Failed to get ticker 'SPY' reason: Expecting value: line 1 column 1 (char 0)
+$SPY: possibly delisted; no price data found  (period=1y)
+✅ Success: Quality Score 67.7
+
+Analyzing MRK...
+✅ FREE DATA SUCCESS: 502 days for MRK (source: yahoo_direct)
+✅ FREE DATA SUCCESS: 502 days for MRK
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/MRK?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=MRK&crumb=Edge%3A+Too+Many+Requests
+Failed to get ticker 'MRK' reason: Expecting value: line 1 column 1 (char 0)
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/MRK?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=MRK&crumb=Edge%3A+Too+Many+Requests
+⚠️ MRK: Fetch error (expecting value: line 1 column...), waiting 5s...
+Failed to get ticker 'SPY' reason: Expecting value: line 1 column 1 (char 0)
+$SPY: possibly delisted; no price data found  (period=1y)
+✅ Success: Quality Score 62.5
+
+--- Testing Parallel Batch Processing ---
+⚠️ Batch processing test skipped/failed: FixedUltimateStrategyAnalyzer.__init__() missing 1 required positional argument: 'analyzer'

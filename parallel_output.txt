@@ -1,0 +1,7 @@
+Starting parallel processing test...
+❌ Test failed: FixedUltimateStrategyAnalyzer.__init__() missing 1 required positional argument: 'analyzer'
+Traceback (most recent call last):
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/test_parallel.py", line 27, in <module>
+    analyzer = FixedUltimateStrategyAnalyzer()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: FixedUltimateStrategyAnalyzer.__init__() missing 1 required positional argument: 'analyzer'

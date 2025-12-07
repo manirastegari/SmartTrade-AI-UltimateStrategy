@@ -1,0 +1,61 @@
+Starting parallel processing test...
+🤖 Initializing ML Meta-Predictor...
+🤖 ML Meta-Predictor initialized
+   Available models: 6/6
+⚠️ Real ML models not found - initializing with synthetic priors
+   (Will train on real data during this run)
+
+🎓 Training with synthetic priors for cold-start capability...
+
+🎯 Training ML models on 1000 samples...
+   Training LightGBM...
+   Training XGBoost...
+   Training CatBoost...
+   Training Random Forest...
+   Training Gradient Boosting...
+   Training Neural Network...
+
+📊 Validation RMSE:
+   catboost            : 5.1222
+   xgboost             : 5.2052
+   lightgbm            : 5.2368
+   gradient_boost      : 5.3022
+   neural_net          : 5.3223
+   random_forest       : 5.4143
+✅ Synthetic prior training complete with 1000 samples
+   Models ready for cold-start predictions
+🧠 Initializing AI Market & Pick Validator...
+⚠️ AI Validator disabled - Grok API key not found
+🎯 Initializing AI Top Picks Selector...
+⚠️ AI Top Picks will use algorithmic fallback - Grok API key not found
+🔍 Initializing AI Catalyst & News Analyzer...
+⚠️ AI Catalyst Analysis will use fallback - Grok API key not found
+📊 Market Timing Signal enabled - will provide clear BUY/WAIT/SELL signals
+✅ Premium Ultimate Strategy initialized
+   Using 15 quality metrics instead of 200+ indicators
+Running batch analysis on 4 symbols...
+
+📊 Analyzing 4 stocks with 15 quality metrics...
+🔄 Using batch processing: 50 stocks per batch with 60s rest periods
+
+📦 Processing batch 1/1 (4 stocks)...
+
+✅ Quality analysis complete: 0/4 stocks successful
+🔁 680 symbols missing due to data gaps — sourcing replacements...
+🔧 Backfilling with 680 replacement symbols...
+   ⚠️ MMC: object of type 'NoneType' has no len()
+   ⚠️ AGYS: object of type 'NoneType' has no len()
+   ⚠️ AVB: object of type 'NoneType' has no len()
+   ⚠️ BTU: object of type 'NoneType' has no len()
+   ⚠️ COF: object of type 'NoneType' has no len()
+   ⚠️ DOMO: object of type 'NoneType' has no len()
+   ⚠️ FAST: object of type 'NoneType' has no len()
+   ⚠️ HBAN: object of type 'NoneType' has no len()
+   ⚠️ K: object of type 'NoneType' has no len()
+   ⚠️ MEDP: object of type 'NoneType' has no len()
+   ⚠️ NTRS: object of type 'NoneType' has no len()
+   ⚠️ PLTR: object of type 'NoneType' has no len()
+   ⚠️ RMD: object of type 'NoneType' has no len()
+✅ Backfill complete. Total analyzed: 0 stocks
+⚠️ Final analyzed count 0 remains below target 680. Review TFSA alignment lists or data availability logs.
+✅ Batch analysis completed in 141.56s

@@ -217,7 +217,7 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus
     
     **Output:** True consensus picks with detailed agreement metrics + AI market/stock review
     
-    **Time:** 45–60 minutes
+    **Time:** 60-90 minutes
     **Expected Return:** 26-47% annually (lower risk)
     """)
 

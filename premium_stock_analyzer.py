@@ -77,7 +77,7 @@ class PremiumStockAnalyzer:
                     ticker = yf.Ticker(symbol)
                     
                     # Try with retry logic
-                    max_retries = 2
+                    max_retries = 3
                     for attempt in range(max_retries):
                         try:
                             raw_info = ticker.info
@@ -98,13 +98,16 @@ class PremiumStockAnalyzer:
                                 }
                                 break  # Success
                         except Exception as retry_e:
-                            if '429' in str(retry_e) and attempt < max_retries - 1:
-                                # Rate limited - exponential backoff
-                                wait_time = (attempt + 1) * 3  # 3, 6 seconds
-                                print(f"⚠️ {symbol}: Rate limited, waiting {wait_time}s...")
+                            error_msg = str(retry_e).lower()
+                            # Handle JSON decode errors (often means blocked/HTML response) and 429s
+                            if '429' in error_msg or 'expecting value' in error_msg or 'json' in error_msg:
+                                # Rate limited or blocked - exponential backoff
+                                wait_time = (attempt + 1) * 5  # 5, 10, 15 seconds
+                                print(f"⚠️ {symbol}: Fetch error ({error_msg[:30]}...), waiting {wait_time}s...")
                                 time.sleep(wait_time)
                             else:
-                                raise  # Give up
+                                if attempt == max_retries - 1:
+                                    raise  # Give up on last try
                 except Exception as e:
                     fallback_error = e
                     if '429' not in str(e):

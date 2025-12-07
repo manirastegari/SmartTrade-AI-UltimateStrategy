@@ -50,7 +50,7 @@ def push_to_github(filename):
         print(f"⚠️ Git push error: {str(e)}")
         return False
 
-def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=None, all_stocks_data=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None):
+def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=None, all_stocks_data=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None):
     """Export analysis results to Excel with multiple sheets
     
     Optimized for Premium Quality Universe (614 institutional-grade stocks)
@@ -63,6 +63,9 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         all_stocks_data: Complete list of ALL analyzed stocks (NEW - for full dataset export)
         market_tradability: AI market tradability analysis (NEW - for AI insights)
         market_timing_signal: Market timing signal (NEW - BUY/WAIT/SELL signal)
+        analysis_start_time: Analysis start timestamp
+        analysis_end_time: Analysis end timestamp
+        analysis_duration_minutes: Total analysis duration in minutes
     """
     
     if not results and not all_stocks_data:
@@ -85,7 +88,10 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
                 all_stocks_count=len(all_stocks_data) if all_stocks_data else None,
                 market_tradability=market_tradability,
                 market_timing_signal=market_timing_signal,
-                ai_top_picks=ai_top_picks
+                ai_top_picks=ai_top_picks,
+                analysis_start_time=analysis_start_time,
+                analysis_end_time=analysis_end_time,
+                analysis_duration_minutes=analysis_duration_minutes
             )
             
             # Sheet 2: ALL ANALYZED STOCKS (NEW - Critical for user visibility)
@@ -130,7 +136,7 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
     except Exception as e:
         return None, f"Export failed: {str(e)}"
 
-def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None):
+def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None):
     """Create summary dashboard sheet
     
     Args:
@@ -140,6 +146,9 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
         all_stocks_count: Total number of stocks analyzed (NEW - to show complete picture)
         market_tradability: AI market tradability analysis (NEW - for AI insights)
         market_timing_signal: Market timing signal (NEW - BUY/WAIT/SELL signal)
+        analysis_start_time: Analysis start timestamp
+        analysis_end_time: Analysis end timestamp
+        analysis_duration_minutes: Total analysis duration in minutes
     """
     
     # Check if this is consensus format
@@ -169,7 +178,9 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
         # Create consensus summary
         summary_data = {
             'Metric': [
-                'Analysis Date',
+                'Analysis Start Time',
+                'Analysis End Time',
+                'Total Duration (minutes)',
                 'Analysis Type',
                 'Universe Type',
                 'Total Stocks Analyzed',
@@ -206,7 +217,9 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 'Analysis Parameters'
             ],
             'Value': [
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                analysis_start_time if analysis_start_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                analysis_end_time if analysis_end_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                f"{analysis_duration_minutes} minutes" if analysis_duration_minutes else "N/A",
                 'Premium Ultimate Strategy - 4-Perspective Consensus',
                 'Premium Quality Universe (614 institutional-grade stocks)',
                 f"{total_analyzed_display} stocks (complete analysis)",
@@ -431,25 +444,50 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
     summary_df.to_excel(writer, sheet_name='AI_Top_Picks', index=False)
 
     if picks:
-        picks_df = pd.DataFrame([
-            {
-                'Rank': pick.get('rank', i + 1),
+        # Prepare data for DataFrame
+        data = []
+        for pick in picks: # Changed picks_list to picks
+            current_price = pick.get('current_price', 0)
+            # Calculate Buy Zone and Take Profit if not present
+            buy_zone = pick.get('buy_zone', f"${current_price:.2f} - ${current_price*1.02:.2f}")
+            take_profit = pick.get('take_profit', f"${current_price*1.15:.2f} (+15%)")
+            
+            data.append({
+                'Rank': pick.get('rank', 0),
                 'Symbol': pick.get('symbol', 'N/A'),
-                'AI Score': pick.get('ai_score', 0),
-                'Action': pick.get('action', 'N/A'),
-                'Position Size': pick.get('position_size', 'N/A'),
-                'Entry Timing': pick.get('entry_timing', 'N/A'),
-                'Why Selected': pick.get('why_selected', 'N/A')
-            }
-            for i, pick in enumerate(picks)
-        ])
+                'Name': pick.get('name', 'N/A'),
+                'Sector': pick.get('sector', 'N/A'),
+                'Current Price': current_price,
+                'Buy Zone': buy_zone,
+                'Take Profit': take_profit,
+                'AI Confidence': f"{pick.get('confidence', 0)}%",
+                'Reasoning': pick.get('reasoning', '')
+            })
+            
+        df = pd.DataFrame(data)
+        
+        # Write to Excel
+        start_row = len(summary_df) + 2 # Added start_row logic
+        df.to_excel(writer, sheet_name='AI_Top_Picks', index=False, startrow=start_row) # Changed sheet name to match summary
 
-        start_row = len(summary_df) + 2
-        picks_df.to_excel(writer, sheet_name='AI_Top_Picks', index=False, startrow=start_row)
+    worksheet = writer.sheets['AI_Top_Picks'] # Ensure worksheet is defined even if picks is empty
 
-    worksheet = writer.sheets['AI_Top_Picks']
-
-    # Auto-fit each column based on the longest cell content
+    # Adjust column widths
+    column_widths = {
+        'A': 6,   # Rank
+        'B': 10,  # Symbol
+        'C': 25,  # Name
+        'D': 20,  # Sector
+        'E': 12,  # Current Price
+        'F': 20,  # Buy Zone
+        'G': 20,  # Take Profit
+        'H': 15,  # AI Confidence
+        'I': 60   # Reasoning
+    }
+    for col_letter, width in column_widths.items():
+        worksheet.column_dimensions[col_letter].width = width
+    
+    # Auto-fit remaining columns if any, or adjust existing ones if content is longer
     for column_cells in worksheet.columns:
         max_length = 0
         column_letter = column_cells[0].column_letter
@@ -459,7 +497,9 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
             except Exception:
                 cell_length = 0
             max_length = max(max_length, cell_length)
-        worksheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
+        # Only apply if auto-fit length is greater than manually set width, or if column wasn't manually set
+        if column_letter not in column_widths or max_length + 2 > column_widths[column_letter]:
+            worksheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
 
 def create_recommendations_sheet(results, writer, recommendation_types, sheet_name=None):
     """Create recommendations sheet (supports both old and new consensus format)"""
@@ -474,9 +514,7 @@ def create_recommendations_sheet(results, writer, recommendation_types, sheet_na
     filtered_results = [r for r in results if r.get('recommendation') in recommendation_types]
     
     if not filtered_results:
-        # Create empty sheet with message
-        empty_df = pd.DataFrame({'Message': ['No recommendations found for the selected criteria']})
-        empty_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        # Skip creating empty sheet
         return
     
     # Create recommendations data (handle both old and new consensus formats)

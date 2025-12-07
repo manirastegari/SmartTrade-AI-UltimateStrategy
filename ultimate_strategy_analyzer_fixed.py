@@ -91,12 +91,21 @@ class FixedUltimateStrategyAnalyzer:
         
         # Initialize ML meta-predictor
         self.ml_predictor = None
+        self.needs_real_training = False
+        
         if ML_AVAILABLE:
             print("🤖 Initializing ML Meta-Predictor...")
             self.ml_predictor = MLMetaPredictor()
-            # Train with synthetic priors for cold-start capability
-            self.ml_predictor.train_with_synthetic_priors(n_samples=1000)
-            print("✅ ML Enhancement enabled - predictions will include ML probability scores")
+            
+            # Try to load real models first
+            if self.ml_predictor.load_models():
+                print("✅ ML Enhancement enabled - Loaded REAL market models")
+            else:
+                # Fallback to synthetic
+                print("⚠️ Real ML models not found - initializing with synthetic priors")
+                print("   (Will train on real data during this run)")
+                self.ml_predictor.train_with_synthetic_priors(n_samples=1000)
+                self.needs_real_training = True
         
         # Initialize AI Market & Pick Validator (NEW)
         self.ai_validator = None
@@ -183,6 +192,10 @@ class FixedUltimateStrategyAnalyzer:
         print(f"   Perspectives: 4 investment styles for consensus")
         print(f"{'='*80}\n")
         
+        # STEP 1.5: Train ML on Real Data (if needed)
+        if self.needs_real_training and self.ml_predictor:
+            self._train_ml_on_real_data(full_universe, progress_callback)
+        
         # STEP 2: Analyze market conditions
         if progress_callback:
             progress_callback("Analyzing market conditions...", 10)
@@ -202,6 +215,8 @@ class FixedUltimateStrategyAnalyzer:
             
             # Store for later use
             market_analysis['timing_signal'] = market_timing_signal
+            
+
         
         # STEP 2.5: AI Market Tradability Check (NEW)
         self.market_tradability = None  # Reset at start of run
@@ -421,6 +436,83 @@ class FixedUltimateStrategyAnalyzer:
         
         return final_results
 
+    def _train_ml_on_real_data(self, universe: List[str], progress_callback=None):
+        """
+        Train ML models on real data from a subset of the universe.
+        Uses 'time travel' validation: trains on data from 30 days ago vs today's price.
+        """
+        print(f"\n{'='*80}")
+        print("🎓 TRAINING ML MODELS ON REAL DATA")
+        print(f"{'='*80}")
+        
+        # Select a representative subset (top 60 liquid stocks for speed/reliability)
+        training_subset = universe[:60]
+        
+        if progress_callback:
+            progress_callback("Fetching real data for ML training...", 9)
+            
+        print(f"   Fetching history for {len(training_subset)} stocks to calibrate AI...")
+        
+        training_data = []
+        valid_count = 0
+        
+        for i, symbol in enumerate(training_subset):
+            try:
+                # Get comprehensive data
+                stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
+                if not stock_data or 'data' not in stock_data:
+                    continue
+                    
+                hist = stock_data['data']
+                if len(hist) < 90: # Need enough history (60 days + 30 days target)
+                    continue
+                
+                # Time Travel: Go back 30 days
+                # We want to predict returns over the NEXT 30 days
+                lookback_days = 30
+                target_idx = len(hist) - lookback_days
+                
+                if target_idx < 60:
+                    continue
+                    
+                # Slice history to represent "the past"
+                past_hist = hist.iloc[:target_idx]
+                
+                # Calculate the ACTUAL return that happened (the target)
+                past_price = hist['Close'].iloc[target_idx-1] # Price at end of "past"
+                current_price = hist['Close'].iloc[-1]        # Price today
+                
+                if past_price <= 0:
+                    continue
+                    
+                actual_forward_return = ((current_price - past_price) / past_price) * 100
+                
+                # Analyze the "past" state to get features
+                # We use the same analyzer but with truncated history
+                past_analysis = self.premium_analyzer.analyze_stock(
+                    symbol, 
+                    hist_data=past_hist, 
+                    info=stock_data.get('info', {})
+                )
+                
+                if past_analysis and past_analysis.get('success'):
+                    # Attach the known target
+                    past_analysis['forward_return'] = actual_forward_return
+                    training_data.append(past_analysis)
+                    valid_count += 1
+                    print(f"   + Added training sample: {symbol} (Target: {actual_forward_return:+.1f}%)", end='\r')
+                    
+            except Exception:
+                continue
+                
+        print(f"\n   Collected {valid_count} valid training samples.")
+        
+        if training_data:
+            self.ml_predictor.train_with_real_data(training_data)
+            self.needs_real_training = False
+        else:
+            print("⚠️ Could not collect enough real data. Using synthetic priors.")
+
     def _determine_global_trading_mode(self, market_analysis: Dict) -> str:
         """Determine high-level trading mode from market timing + AI tradability.
 
@@ -539,6 +631,13 @@ class FixedUltimateStrategyAnalyzer:
         TFSA-friendly replacements so the analyzed universe stays at full strength.
         """
         import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        try:
+            from streamlit.runtime.scriptrunner import add_script_run_ctx
+        except ImportError:
+            # Fallback for older Streamlit versions or if not running in Streamlit
+            def add_script_run_ctx(func):
+                return func
 
         results = {}
         total = len(symbols)
@@ -546,7 +645,7 @@ class FixedUltimateStrategyAnalyzer:
         failed_symbols: List[str] = []
 
         print(f"\n📊 Analyzing {total} stocks with 15 quality metrics...")
-        print(f"🔄 Using batch processing: {batch_size} stocks per batch with 60s rest periods")
+        print(f"🔄 Using batch processing: {batch_size} stocks per batch with 15s rest periods (Parallelized)")
 
         def analyze_symbol(symbol: str, global_idx: Optional[int] = None, total_count: Optional[int] = None) -> bool:
             """Shared analysis routine so we can reuse it when backfilling."""
@@ -593,22 +692,29 @@ class FixedUltimateStrategyAnalyzer:
                 print(f"   ⚠️ Error analyzing {symbol}: {exc}")
                 return False
 
-        # Process in batches
-        for batch_start in range(0, total, batch_size):
-            batch_end = min(batch_start + batch_size, total)
-            batch_symbols = symbols[batch_start:batch_end]
-            batch_num = (batch_start // batch_size) + 1
-            total_batches = (total + batch_size - 1) // batch_size
+        # Process in batches with parallel execution
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for batch_start in range(0, total, batch_size):
+                batch_end = min(batch_start + batch_size, total)
+                batch_symbols = symbols[batch_start:batch_end]
+                batch_num = (batch_start // batch_size) + 1
+                total_batches = (total + batch_size - 1) // batch_size
 
-            print(f"\n📦 Processing batch {batch_num}/{total_batches} ({len(batch_symbols)} stocks)...")
+                print(f"\n📦 Processing batch {batch_num}/{total_batches} ({len(batch_symbols)} stocks)...")
+                
+                # Submit batch to thread pool
+                futures = {executor.submit(add_script_run_ctx(analyze_symbol), symbol, idx + 1, total): symbol for idx, symbol in enumerate(batch_symbols, start=batch_start)}
+                
+                # Wait for batch to complete
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"   ⚠️ Thread error: {e}")
 
-            for idx, symbol in enumerate(batch_symbols, 1):
-                global_idx = batch_start + idx
-                analyze_symbol(symbol, global_idx=global_idx, total_count=total)
-
-            if batch_end < total:
-                print("😴 Resting 60 seconds before next batch (avoiding rate limits)...")
-                time.sleep(60)
+                if batch_end < total:
+                    print("😴 Resting 15 seconds before next batch (avoiding rate limits)...")
+                    time.sleep(15)
 
         print(f"\n✅ Quality analysis complete: {len(results)}/{total} stocks successful")
 
@@ -1570,6 +1676,9 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             'stocks_2_of_4': tier_counts[2],
             'analysis_type': 'PREMIUM_QUALITY_CONSENSUS',
             'analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'analysis_start_time': getattr(self, 'analysis_start_time', datetime.now()).strftime('%Y-%m-%d %H:%M:%S'),
+            'analysis_end_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'analysis_duration_minutes': round((datetime.now() - getattr(self, 'analysis_start_time', datetime.now())).total_seconds() / 60, 1),
             'denylist_excluded': len(self._denylist_excluded),
             'metrics_used': '15 quality metrics (not 200+ indicators)'
         }
@@ -1595,14 +1704,17 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             # Extract market timing signal from results
             market_timing_signal = results.get('market_analysis', {}).get('timing_signal')
             
-            # Export with BOTH datasets + AI validation + market timing
+            # Export with BOTH datasets + AI validation + market timing + timing data
             filename, msg = export_analysis_to_excel(
                 consensus_export,  # Consensus picks for main tabs
                 all_stocks_data=all_analyzed,  # NEW: All 613 stocks for complete tab
                 analysis_params=f'Premium Ultimate Strategy - {len(all_analyzed)} stocks analyzed, {len(consensus)} consensus picks',
                 market_tradability=results.get('market_tradability'),  # AI market validation
                 market_timing_signal=market_timing_signal,  # Market timing signal
-                ai_top_picks=results.get('ai_top_picks')  # AI-selected best opportunities
+                ai_top_picks=results.get('ai_top_picks'),  # AI-selected best opportunities
+                analysis_start_time=results.get('analysis_start_time'),
+                analysis_end_time=results.get('analysis_end_time'),
+                analysis_duration_minutes=results.get('analysis_duration_minutes')
             )
             
             if filename:
@@ -1928,9 +2040,13 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                                 st.warning(action)
                             st.caption(f"{position_size} position")
                         
+                        # Find matching pick to get price
+                        matching_pick = next((p for p in consensus if p['symbol'] == symbol), None)
+                        current_price = matching_pick.get('current_price', 0) if matching_pick else 0
+                        
                         with col4:
                             st.markdown(f"*{why}*")
-                            st.caption(f"Entry: {entry_timing}")
+                            st.caption(f"Entry: {entry_timing} | Price: ${current_price:.2f}")
                         
                         st.markdown("---")
             

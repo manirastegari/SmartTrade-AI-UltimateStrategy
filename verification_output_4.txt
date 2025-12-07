@@ -1,0 +1,76 @@
+Starting reproduction script...
+Importing AdvancedDataFetcher...
+Imported AdvancedDataFetcher
+Importing PremiumStockAnalyzer...
+Imported PremiumStockAnalyzer
+
+--- Testing VIX Fetching ---
+⏭️ No Alpha Vantage key set; skipping AV except for IBM demo
+💾 Smart Cache initialized at .cache
+💾 Smart caching enabled - 4x faster on repeat runs!
+🆓 Cost-effective data sources initialized - FREE REAL DATA
+Failed to get ticker '^VIX' reason: Expecting value: line 1 column 1 (char 0)
+$^VIX: possibly delisted; no price data found  (period=5d)
+Direct yfinance ^VIX fetch:
+Empty DataFrame
+Columns: [Open, High, Low, Close, Adj Close, Volume]
+Index: []
+
+--- Testing Fundamental Data Fetching ---
+⏭️ No Alpha Vantage key set; skipping AV except for IBM demo
+💾 Smart Cache initialized at .cache
+💾 Smart caching enabled - 4x faster on repeat runs!
+🆓 Cost-effective data sources initialized - FREE REAL DATA
+
+Analyzing UNH...
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/UNH?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=UNH&crumb=Edge%3A+Too+Many+Requests
+Failed to get ticker 'UNH' reason: Expecting value: line 1 column 1 (char 0)
+SPY data retrieved from web_scrape_SPY
+⚠️ All VIX sources failed, VIX-based macro disabled for this run
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/UNH?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=UNH&crumb=Edge%3A+Too+Many+Requests
+⚠️ UNH: Fetch error (expecting value: line 1 column...), waiting 5s...
+Failed to get ticker 'SPY' reason: Expecting value: line 1 column 1 (char 0)
+$SPY: possibly delisted; no price data found  (period=1y)
+✅ Success: Quality Score 58.85
+
+Analyzing JNJ...
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/JNJ?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=JNJ&crumb=Edge%3A+Too+Many+Requests
+Failed to get ticker 'JNJ' reason: Expecting value: line 1 column 1 (char 0)
+429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary/JNJ?modules=financialData%2CquoteType%2CdefaultKeyStatistics%2CassetProfile%2CsummaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol=JNJ&crumb=Edge%3A+Too+Many+Requests
+⚠️ JNJ: Fetch error (expecting value: line 1 column...), waiting 5s...
+Traceback (most recent call last):
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/premium_stock_analyzer.py", line 83, in analyze_stock
+    raw_info = ticker.info
+               ^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yfinance/ticker.py", line 158, in info
+    return self.get_info()
+           ^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yfinance/base.py", line 227, in get_info
+    data = self._quote.info
+           ^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yfinance/scrapers/quote.py", line 509, in info
+    self._fetch_complementary(self.proxy)
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/yfinance/scrapers/quote.py", line 684, in _fetch_complementary
+    json_data = json.loads(json_str)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/reproduce_issues.py", line 70, in <module>
+    test_fundamental_data()
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/reproduce_issues.py", line 55, in test_fundamental_data
+    result = analyzer.analyze_stock(symbol)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/premium_stock_analyzer.py", line 107, in analyze_stock
+    time.sleep(wait_time)
+KeyboardInterrupt

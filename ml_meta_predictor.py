@@ -385,6 +385,54 @@ class MLMetaPredictor:
         print(f"✅ Synthetic prior training complete with {n_samples} samples")
         print("   Models ready for cold-start predictions")
     
+    def train_with_real_data(self, stock_data_list: List[Dict]):
+        """
+        Train models using REAL historical data
+        
+        Args:
+            stock_data_list: List of stock data dictionaries containing features and 'forward_return' target
+        """
+        print(f"\n🎓 Training with REAL market data ({len(stock_data_list)} samples)...")
+        
+        X_samples = []
+        y_samples = []
+        
+        valid_samples = 0
+        for data in stock_data_list:
+            # Target must exist
+            if 'forward_return' not in data:
+                continue
+                
+            # Extract features
+            try:
+                features = self.extract_features(data)
+                target = float(data['forward_return'])
+                
+                # Sanity check
+                if np.isnan(features).any() or np.isnan(target):
+                    continue
+                    
+                X_samples.append(features)
+                y_samples.append(target)
+                valid_samples += 1
+            except Exception:
+                continue
+        
+        if valid_samples < 50:
+            print(f"⚠️ Not enough valid real samples ({valid_samples}). Falling back to synthetic priors.")
+            self.train_with_synthetic_priors()
+            return
+
+        X = np.array(X_samples, dtype=np.float32)
+        y = np.array(y_samples, dtype=np.float32)
+        
+        # Train models
+        self.train(X, y, validation_split=0.2)
+        
+        print(f"✅ Real data training complete with {valid_samples} samples")
+        print("   Models are now calibrated to actual market dynamics")
+        self.save_models()
+
     def train(self, X: np.ndarray, y: np.ndarray, validation_split: float = 0.2):
         """
         Train all available models
@@ -489,9 +537,11 @@ class MLMetaPredictor:
             Dict with probability, expected_return, confidence, and interpretability
         """
         if not self.is_trained:
-            # Auto-train with synthetic priors on first prediction
-            print("⚠️ No trained models found. Initializing with synthetic priors...")
-            self.train_with_synthetic_priors()
+            # Try to load saved models first
+            if not self.load_models():
+                # Auto-train with synthetic priors if no saved models
+                print("⚠️ No trained models found. Initializing with synthetic priors...")
+                self.train_with_synthetic_priors()
         
         # Extract features
         features = self.extract_features(stock_data)
@@ -566,10 +616,13 @@ class MLMetaPredictor:
         """Load trained models from disk"""
         if timestamp is None:
             # Find latest
+            if not os.path.exists(self.model_dir):
+                return False
+                
             files = os.listdir(self.model_dir)
-            timestamps = set(f.split('_')[-1].replace('.joblib', '') for f in files if '.joblib' in f)
+            timestamps = set(f.split('_')[-1].replace('.joblib', '') for f in files if '.joblib' in f and 'scaler' not in f)
             if not timestamps:
-                print("⚠️ No saved models found")
+                print("⚠️ No saved models found in .ml_models - will use synthetic priors")
                 return False
             timestamp = max(timestamps)
         
@@ -587,7 +640,8 @@ class MLMetaPredictor:
             self.scaler = joblib.load(scaler_file)
         
         self.is_trained = loaded > 0
-        print(f"✅ Loaded {loaded} models from {timestamp}")
+        if self.is_trained:
+            print(f"✅ Loaded {loaded} trained models from {timestamp}")
         return self.is_trained
 
 

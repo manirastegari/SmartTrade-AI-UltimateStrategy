@@ -11,7 +11,10 @@ from bs4 import BeautifulSoup
 import json
 from datetime import datetime, timedelta
 import time
+import time
+import random
 import re
+import threading
 from textblob import TextBlob
 import warnings
 warnings.filterwarnings('ignore')
@@ -125,6 +128,7 @@ class AdvancedDataFetcher:
         # Rate limiting protection (BALANCED - avoid 429 but not too slow)
         self._last_yfinance_call = 0
         self._yfinance_delay = 0.8  # 0.8 seconds between calls - good balance
+        self._lock = threading.Lock()  # Ensure thread safety for rate limiting
 
         # Track failures for the last run (symbols that could not be fetched)
         # Each item: { 'symbol': str, 'reason': str }
@@ -309,10 +313,19 @@ class AdvancedDataFetcher:
                 # print(f"💾 Cache hit: {symbol}")
                 return cached_data
         
-        # Rate limiting protection
-        current_time = time.time()
-        if current_time - self._last_yfinance_call < self._yfinance_delay:
-            time.sleep(self._yfinance_delay)
+        # Rate limiting protection (Thread-Safe)
+        with self._lock:
+            current_time = time.time()
+            time_since_last = current_time - self._last_yfinance_call
+            
+            # Randomized delay to avoid pattern detection (2.0s to 4.0s)
+            delay = random.uniform(2.0, 4.0)
+            
+            if time_since_last < delay:
+                sleep_needed = delay - time_since_last
+                # print(f"⏳ Rate limit sleep: {sleep_needed:.2f}s for {symbol}")
+                time.sleep(sleep_needed)
+            self._last_yfinance_call = time.time()
         
         # Try cost-effective sources FIRST for real data at $0 cost
         if self.cost_effective_data:
@@ -322,7 +335,10 @@ class AdvancedDataFetcher:
                 cost_effective_data = self.cost_effective_data.get_stock_data(symbol, "2y")
                 if cost_effective_data is not None and not cost_effective_data.empty and len(cost_effective_data) > 20:
                     if self._validate_market_data(cost_effective_data, symbol):
-                        self._last_yfinance_call = time.time()
+                        # Update last call time (thread-safe update not strictly needed here as we slept before, 
+                        # but good practice if we want to count this as a call)
+                        with self._lock:
+                            self._last_yfinance_call = time.time()
                         # Save to cache
                         if self.cache:
                             self.cache.save_to_cache(symbol, cost_effective_data, 'history')
@@ -350,7 +366,8 @@ class AdvancedDataFetcher:
                     hist = method_func(cand)
                     if hist is not None and not hist.empty and len(hist) > 50:
                         if self._validate_market_data(hist, symbol):
-                            self._last_yfinance_call = time.time()
+                            with self._lock:
+                                self._last_yfinance_call = time.time()
                             # Cache under original symbol for consistency
                             if self.cache:
                                 self.cache.save_to_cache(symbol, hist, 'history')
@@ -360,7 +377,12 @@ class AdvancedDataFetcher:
                         else:
                             print(f"⚠️ {method_name} data validation failed for {cand}")
                 except Exception as e:
-                    print(f"⚠️ {method_name} failed for {cand}: {str(e)[:50]}")
+                    error_msg = str(e).lower()
+                    if '429' in error_msg or 'too many requests' in error_msg:
+                        print(f"⚠️ Rate limit (429) hit for {symbol} via {method_name}. Pausing 5s...")
+                        time.sleep(5)
+                    else:
+                        print(f"⚠️ {method_name} failed for {cand}: {str(e)[:50]}")
                     continue
         
         # Fallback to Stooq
@@ -773,6 +795,18 @@ class AdvancedDataFetcher:
                 except Exception:
                     continue
             
+            # If we have price but missing volatility (common with web scrapers), try to fetch history separately
+            if spy_vol_20 is None:
+                try:
+                    # print("⚠️ SPY source missing volatility data, attempting separate history fetch...")
+                    # Force fetch history using yfinance directly
+                    hist = _safe_yf_daily("SPY")
+                    if hist is not None and not hist.empty and len(hist) >= 21:
+                        spy_vol_20 = float(hist['Close'].pct_change().rolling(20).std().iloc[-1])
+                        # print(f"✅ Recovered SPY volatility: {spy_vol_20:.4f}")
+                except Exception:
+                    pass
+
             # If all real sources fail, use synthetic data
             if spy_data_source == "default":
                 # No synthetic macro; log and continue with missing values
@@ -781,6 +815,21 @@ class AdvancedDataFetcher:
             # Multi-source VIX data fetching with comprehensive fallbacks
             # No synthetic default; compute only if sources succeed
             vix_proxy = None
+            
+            # Fallback: Estimate VIX from SPY volatility if direct VIX fails
+            # VIX is roughly 100 * annualized volatility of SP&500 options
+            # A simple proxy is 100 * 20-day historical volatility of SPY
+            def estimate_vix_from_spy():
+                try:
+                    if spy_vol_20 > 0:
+                        # Annualize 20-day vol (approx sqrt(252) * vol)
+                        # This is a rough proxy but better than nothing
+                        est_vix = spy_vol_20 * np.sqrt(252) * 100
+                        return est_vix
+                except:
+                    return None
+                return None
+
             vix_data_source = "default"
             
             # Try multiple sources for VIX data
@@ -791,9 +840,8 @@ class AdvancedDataFetcher:
                 ("yfinance_UVXY", lambda: _safe_yf_daily("UVXY")), # 2x VIX ETF
                 ("stooq_vix", lambda: self._fetch_stooq_history("^VIX")),
                 ("stooq_vixy", lambda: self._fetch_stooq_history("vixy.us")),
-                ("web_scrape_VIX", lambda: self._fetch_simple_web_data("^VIX")),  # Web scraping VIX
-                ("web_scrape_VIXY", lambda: self._fetch_simple_web_data("VIXY")), # Web scraping VIX ETF
-            ] + (
+                ("spy_proxy", lambda: pd.DataFrame({'Close': [estimate_vix_from_spy()]}) if estimate_vix_from_spy() else None)
+            ] + (  # Removed broken web scrapers that were returning erroneous values (e.g. 299.65)
                 [
                     ("paid_VIXY", lambda: paid_manager.get_stock_data("VIXY", "1mo")),
                     ("paid_VXX", lambda: paid_manager.get_stock_data("VXX", "1mo")),
@@ -824,6 +872,11 @@ class AdvancedDataFetcher:
                         else:
                             # Generic conversion
                             vix_proxy = max(10.0, vix_last)
+                        
+                        # SANITY CHECK: VIX shouldn't be > 150 (2008 crash was ~90)
+                        if vix_proxy > 150:
+                            print(f"⚠️ Discarding erroneous VIX value {vix_proxy:.2f} from {source_name}")
+                            continue
                         
                         vix_data_source = source_name
                         try:

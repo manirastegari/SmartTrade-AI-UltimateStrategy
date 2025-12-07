@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/test_rate_limit.py", line 11, in <module>
+    from advanced_data_fetcher import AdvancedDataFetcher
+  File "/Users/manirastegari/maniProject/SmartTrade-AI-UltimateStrategy/advanced_data_fetcher.py", line 333
+    if self._validate_market_data(cost_effective_data, symbol):
+    ^
+IndentationError: expected an indented block after 'if' statement on line 332
