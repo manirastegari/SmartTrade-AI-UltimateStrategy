@@ -432,7 +432,12 @@ class AdvancedDataFetcher:
             response = requests.get(url, headers=headers, params=params, timeout=15)
             
             if response.status_code == 200:
-                data = response.json()
+                try:
+                    data = response.json()
+                except ValueError as e:
+                    print(f"  ⚠️ Yahoo Direct JSON decode error for {symbol}: {e}")
+                    # print(f"  DEBUG Response text: {response.text[:200]}...")
+                    return None
                 
                 if ('chart' in data and 'result' in data['chart'] and 
                     data['chart']['result'] and len(data['chart']['result']) > 0):
@@ -444,6 +449,7 @@ class AdvancedDataFetcher:
                         
                         timestamps = result['timestamp']
                         quotes = result['indicators']['quote'][0]
+                        
                         # Try to use adjusted close if provided
                         adjclose_list = None
                         try:
@@ -461,6 +467,7 @@ class AdvancedDataFetcher:
                                 close_val = quotes['close'][i]
                                 if adjclose_list is not None and i < len(adjclose_list) and adjclose_list[i] is not None:
                                     close_val = adjclose_list[i]
+                                
                                 df_data.append({
                                     'Date': pd.to_datetime(ts, unit='s'),
                                     'Open': quotes['open'][i],
@@ -485,7 +492,7 @@ class AdvancedDataFetcher:
             return None
             
         except Exception as e:
-            print(f"  ⚠️ Yahoo Direct API error for {symbol}: {str(e)[:100]}")
+            # print(f"  ⚠️ Yahoo Direct API error for {symbol}: {str(e)[:100]}")
             return None
     
     def _try_ticker_history(self, symbol):
@@ -887,10 +894,33 @@ class AdvancedDataFetcher:
                 except Exception:
                     continue
             
-            # If all real sources fail, use synthetic VIX
+            # If all real sources fail, try xAI as a smart fallback (last resort)
             if vix_data_source == "default":
-                # No synthetic macro; log and continue with missing value
-                print("⚠️ All VIX sources failed, VIX-based macro disabled for this run")
+                try:
+                    from xai_client import XAIClient
+                    xai = XAIClient()
+                    print("⚠️ Standard VIX sources failed, asking xAI for current VIX...")
+                    
+                    # Minimal prompt to save tokens and time
+                    prompt = "What is the current value of the VIX index? Provide only the number."
+                    response = xai.generate_response(prompt, model="grok-beta") # Use fast model
+                    
+                    if response:
+                        import re
+                        # Extract first float found
+                        match = re.search(r"(\d+\.\d+)", response)
+                        if match:
+                            vix_val = float(match.group(1))
+                            if 5.0 <= vix_val <= 150.0:
+                                vix_proxy = vix_val
+                                vix_data_source = "xai_fallback"
+                                print(f"✅ VIX retrieved via xAI: {vix_proxy:.2f}")
+                except Exception as e:
+                    print(f"❌ xAI VIX fallback failed: {e}")
+
+            # If even xAI fails (or wasn't tried), use synthetic default only if absolutely necessary logic handles None
+            if vix_data_source == "default":
+                print("⚠️ All VIX sources (including AI) failed, VIX-based macro disabled for this run")
 
             # === Additional one-shot macro context (rate-limit friendly) ===
             def _fetch_any(symbols: list[str]):
@@ -1023,8 +1053,8 @@ class AdvancedDataFetcher:
             self._market_context_ts = datetime.now()
             return ctx
         except Exception:
-            # Safe defaults
-            ctx = {'spy_return_1d': 0.0, 'spy_vol_20': 0.02, 'vix_proxy': 20.0}
+            # Safe defaults - return None for VIX to indicate failure rather than fake 20.0
+            ctx = {'spy_return_1d': 0.0, 'spy_vol_20': 0.02, 'vix_proxy': None}
             self._market_context_cache = ctx
             return ctx
 

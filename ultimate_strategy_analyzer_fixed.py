@@ -1579,15 +1579,106 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
         
         return sections
     
+    def _calculate_trade_levels(self, pick: Dict) -> Dict:
+        """Calculate concrete trade levels based on technicals and volatility"""
+        try:
+            current_price = pick.get('current_price', 0)
+            if not current_price:
+                return {}
+                
+            volatility = pick.get('volatility', 0.02) # Daily volatility proxy if available
+            atr = current_price * (volatility if volatility else 0.02)
+            
+            support = pick.get('technical', {}).get('support')
+            resistance = pick.get('technical', {}).get('resistance')
+            
+            # 1. Suggestion Buy Price
+            # If strong uptrend, buy at market or slight dip. If weak, wait for deeper dip.
+            score = pick.get('entry_score', 80)
+            if score >= 85:
+                buy_price = current_price # Buy Market
+                buy_range_low = current_price * 0.995
+                buy_range_high = current_price * 1.005
+            else:
+                buy_price = current_price * 0.99 # Limit order slightly below
+                buy_range_low = current_price * 0.98
+                buy_range_high = current_price * 1.00
+                
+            # 2. Stop Loss
+            # Below support or 2x ATR
+            if support and support < current_price:
+                stop_loss = min(support * 0.99, current_price - (2 * atr))
+            else:
+                stop_loss = current_price - (2.5 * atr) # Default trailing stop logic
+                
+            # 3. Take Profit
+            # At resistance or R:R ratio
+            risk = buy_price - stop_loss
+            target_rr = 2.0 # Target 2:1 Reward:Risk minimum
+            min_target = buy_price + (risk * target_rr)
+            
+            if resistance and resistance > buy_price:
+                # If resistance is far enough, use it. If too close, look higher.
+                if resistance > min_target:
+                    take_profit = resistance * 0.99 # Front-run resistance
+                else:
+                    take_profit = min_target # Breakout target
+            else:
+                take_profit = min_target
+                
+            # Formatting
+            return {
+                'buy_price': round(buy_price, 2),
+                'buy_zone': f"${buy_range_low:.2f} - ${buy_range_high:.2f}",
+                'stop_loss': round(stop_loss, 2),
+                'take_profit': round(take_profit, 2),
+                'risk_reward': round((take_profit - buy_price) / (buy_price - stop_loss), 2) if buy_price > stop_loss else 0
+            }
+        except Exception:
+            return {}
+
     def _prepare_final_results(self, consensus: List, market: Dict, ai: Dict, ai_top_picks: Dict = None) -> Dict:
         """Prepare final results structure"""
         
+        # Calculate Timing
+        end_time = datetime.now()
+        start_time = getattr(self, 'analysis_start_time', end_time)
+        duration = (end_time - start_time).total_seconds() / 60
+        
+        # Inject Trade Levels into Consensus Picks
+        for pick in consensus:
+            levels = self._calculate_trade_levels(pick)
+            pick.update(levels)
+
+        # Inject Trade Levels into AI Top Picks (if they exist)
+        if ai_top_picks and 'ai_top_picks' in ai_top_picks:
+            for pick in ai_top_picks['ai_top_picks']:
+                # Find matching consensus pick to reuse calculations if possible, or recalculate
+                match = next((p for p in consensus if p['symbol'] == pick.get('symbol')), None)
+                if match:
+                    # Copy calculated levels
+                    for key in ['buy_price', 'buy_zone', 'stop_loss', 'take_profit', 'risk_reward']:
+                        if key in match:
+                            pick[key] = match[key]
+                else:
+                    # Recalculate if not in consensus (rare)
+                    # We might need price/volatility which might be missing in simple AI pick dict
+                    # Try to find in all results
+                    full_data = self.base_results.get(pick.get('symbol'), {})
+                    if full_data:
+                        # Create a temporary enriched dict for calculation
+                        temp_pick = dict(pick)
+                        temp_pick.update(full_data)
+                        levels = self._calculate_trade_levels(temp_pick)
+                        pick.update(levels)
+            
         # Count tiers
         tier_counts = {4: 0, 3: 0, 2: 0}
         for pick in consensus:
             tier_counts[pick['strategies_agreeing']] = tier_counts.get(pick['strategies_agreeing'], 0) + 1
         
         # CRITICAL FIX: Include ALL analyzed stocks, not just consensus
+
         # Prepare complete analysis for Excel export
         all_analyzed = []
         for symbol, quality_data in self.base_results.items():

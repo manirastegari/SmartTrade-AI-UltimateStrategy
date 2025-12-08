@@ -47,8 +47,19 @@ class SmartCache:
                     else:
                         # Cache expired
                         del cache[key]
-        except Exception as e:
-            print(f"⚠️ Cache read error for {symbol}: {e}")
+        except (dbm.error, shelve.Error, Exception) as e: # Modified to catch dbm.error and shelve.Error
+            # Handle corrupt cache or overflow
+            print(f"⚠️ Cache read error for {symbol} ({str(e)}). Resetting cache.")
+            try:
+                # Attempt to clear the corrupted cache file and its associated files
+                if os.path.exists(self.cache_file):
+                    os.remove(self.cache_file)
+                # Also remove sidecar files if they exist (common with some dbm implementations)
+                for ext in ['.dat', '.bak', '.dir', '.pag']: # Added .pag for some dbm implementations
+                    if os.path.exists(self.cache_file + ext):
+                        os.remove(self.cache_file + ext)
+            except Exception as clear_e:
+                print(f"⚠️ Error clearing corrupted cache: {clear_e}")
         
         return None
     

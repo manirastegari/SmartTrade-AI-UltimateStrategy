@@ -189,13 +189,18 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 👨‍💻 Author
+## 👨‍💻 About Me
 
 **Mani Rastegari**
 
-- Professional Trading Terminal Developer
-- Institutional-Grade Analysis Expert
-- AI/ML Integration Specialist
+*   **Principal Developer & Architect**: SmartTrade AI Ultimate Strategy
+*   **Expertise**: Institutional-Grade Trading Systems, Quantitative Analysis, AI/ML Integration
+*   **Mission**: Democratizing hedge-fund level analysis tools for serious individual investors.
+
+## 🛡️ robust Data Engine
+*   **Self-Healing Cache**: Automatic detection and recovery from cache corruption (`smart_cache.py`)
+*   **Resilient Fetching**: Advanced error handling for API failures, including JSON decoding errors and rate limits (`advanced_data_fetcher.py`)
+*   **Zero-Cost Redundancy**: Intelligent fallback between Yahoo Finance, Stooq, and Alpha Vantage to ensure 100% data availability without paid subscriptions.
 
 ## 🙏 Acknowledgments
 
