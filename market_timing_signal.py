@@ -49,7 +49,13 @@ class MarketTimingSignal:
         """
         
         # Extract market data
+        # Extract market data
         vix = market_context.get('vix_proxy') or market_context.get('vix')
+        spy_return = market_context.get('spy_return_1d', 0.0)
+        spy_vol = market_context.get('spy_vol_20', 0.015)
+        regime = market_context.get('regime', 'neutral')
+        trend = market_context.get('trend', 'sideways')
+        yield_curve = market_context.get('yield_curve_slope', 0.0)
         
         # Handle None/Zero values
         if vix == 0:
