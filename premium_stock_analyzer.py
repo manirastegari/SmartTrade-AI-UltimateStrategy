@@ -58,71 +58,11 @@ class PremiumStockAnalyzer:
                 stock_data = self.data_fetcher.get_comprehensive_stock_data(symbol)
                 if not stock_data or 'data' not in stock_data:
                     return self._empty_result(symbol, "No historical data available")
-                hist_data = stock_data.get('data')  # Changed from 'hist' to 'data'
+                hist_data = stock_data.get('data')
                 info = stock_data.get('info', {})
-            
-            # CRITICAL FIX: If info is empty (market_cap=0), try direct yfinance as fallback.
-            # If the fallback fails, continue with neutral fundamentals rather than aborting.
-            if not info or info.get('marketCap', 0) == 0:
-                fallback_error = None
-                try:
-                    import yfinance as yf
-                    import time
-                    import random
-                    
-                    # Balanced rate limiting - fast enough but avoids 429 blocks
-                    delay = random.uniform(0.5, 1.2)  # Random delay 0.5-1.2 seconds per stock
-                    time.sleep(delay)
-                    
-                    ticker = yf.Ticker(symbol)
-                    
-                    # Try with retry logic
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            raw_info = ticker.info
-                            if raw_info and raw_info.get('marketCap', 0) > 0:
-                                # Map yfinance fields to our format
-                                info = {
-                                    'marketCap': raw_info.get('marketCap', 0),
-                                    'trailingPE': raw_info.get('trailingPE', 0),
-                                    'forwardPE': raw_info.get('forwardPE', 0),
-                                    'sector': raw_info.get('sector', 'Unknown'),
-                                    'beta': raw_info.get('beta', 1.0),
-                                    'debtToEquity': raw_info.get('debtToEquity', 0),
-                                    'priceToBook': raw_info.get('priceToBook', 0),
-                                    'dividendYield': raw_info.get('dividendYield', 0),
-                                    'profitMargins': raw_info.get('profitMargins', 0),
-                                    'revenueGrowth': raw_info.get('revenueGrowth', 0),
-                                    'returnOnEquity': raw_info.get('returnOnEquity', 0),
-                                }
-                                break  # Success
-                        except Exception as retry_e:
-                            error_msg = str(retry_e).lower()
-                            # Handle JSON decode errors (often means blocked/HTML response) and 429s
-                            if '429' in error_msg or 'expecting value' in error_msg or 'json' in error_msg:
-                                # Rate limited or blocked - exponential backoff
-                                wait_time = (attempt + 1) * 5  # 5, 10, 15 seconds
-                                print(f"⚠️ {symbol}: Fetch error ({error_msg[:30]}...), waiting {wait_time}s...")
-                                time.sleep(wait_time)
-                            else:
-                                if attempt == max_retries - 1:
-                                    raise  # Give up on last try
-                except Exception as e:
-                    fallback_error = e
-                    if '429' not in str(e):
-                        print(f"⚠️ {symbol}: Fundamental data error ({e})")
-                finally:
-                    if not info or info.get('marketCap', 0) == 0:
-                        # Ensure we have a dict with neutral defaults so analysis still runs.
-                        info = info or {}
-                        info.setdefault('marketCap', 0)
-                        info.setdefault('sector', 'Unknown')
-                        info.setdefault('beta', info.get('beta', 1.0) or 1.0)
-                        info.setdefault('_fundamentals_missing', True)
-                        if fallback_error:
-                            info.setdefault('_fundamental_error', str(fallback_error))
-            
+            else:
+                info = info or {}
+
             # Calculate all 15 metrics
             fundamentals = self._calculate_fundamentals(info, hist_data)
             momentum = self._calculate_momentum(hist_data, symbol)

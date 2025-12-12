@@ -631,13 +631,9 @@ class FixedUltimateStrategyAnalyzer:
         TFSA-friendly replacements so the analyzed universe stays at full strength.
         """
         import time
+        import time
+        import gc
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        try:
-            from streamlit.runtime.scriptrunner import add_script_run_ctx
-        except ImportError:
-            # Fallback for older Streamlit versions or if not running in Streamlit
-            def add_script_run_ctx(func):
-                return func
 
         results = {}
         total = len(symbols)
@@ -650,10 +646,7 @@ class FixedUltimateStrategyAnalyzer:
         def analyze_symbol(symbol: str, global_idx: Optional[int] = None, total_count: Optional[int] = None) -> bool:
             """Shared analysis routine so we can reuse it when backfilling."""
             try:
-                if progress_callback and global_idx and total_count and global_idx % 10 == 0:
-                    pct = int(15 + (global_idx / max(total_count, 1) * 55))
-                    pct = min(70, pct)
-                    progress_callback(f"Analyzing {symbol} ({global_idx}/{total_count})...", pct)
+                # Removed progress_callback from thread to prevent Streamlit context errors
 
                 stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
                 if not stock_data or 'data' not in stock_data:
@@ -673,15 +666,12 @@ class FixedUltimateStrategyAnalyzer:
                     if global_idx and total_count and global_idx % 20 == 0:
                         print(f"   ✅ Analyzed {global_idx}/{total_count} stocks")
                         sample = results[symbol]
-                        print(f"      📋 Sample {symbol} data structure:")
-                        print(f"         quality_score: {sample.get('quality_score', 'MISSING')}")
-                        print(f"         beta (flat): {sample.get('beta', 'MISSING')}")
-                        print(f"         beta (nested): {sample.get('risk', {}).get('beta', 'MISSING')}")
-                        print(f"         rsi_14 (flat): {sample.get('rsi_14', 'MISSING')}")
-                        print(f"         rsi (nested): {sample.get('momentum', {}).get('rsi', 'MISSING')}")
+                        # Reduced logging verbosity
+                        # print(f"      📋 Sample {symbol} quality_score: {sample.get('quality_score', 'MISSING')}")
                     return True
 
                 failed_symbols.append(symbol)
+                # Log failures occasionally
                 if quality_result and not quality_result.get('success') and global_idx and global_idx % 50 == 0:
                     error_msg = quality_result.get('error', 'Unknown error')
                     print(f"   ⚠️ {symbol}: {error_msg}")
@@ -693,7 +683,7 @@ class FixedUltimateStrategyAnalyzer:
                 return False
 
         # Process in batches with parallel execution
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:  # Slightly increased workers
             for batch_start in range(0, total, batch_size):
                 batch_end = min(batch_start + batch_size, total)
                 batch_symbols = symbols[batch_start:batch_end]
@@ -702,15 +692,32 @@ class FixedUltimateStrategyAnalyzer:
 
                 print(f"\n📦 Processing batch {batch_num}/{total_batches} ({len(batch_symbols)} stocks)...")
                 
-                # Submit batch to thread pool
-                futures = {executor.submit(add_script_run_ctx(analyze_symbol), symbol, idx + 1, total): symbol for idx, symbol in enumerate(batch_symbols, start=batch_start)}
+                # Submit batch to thread pool WITHOUT Streamlit context hack
+                # We map future -> (symbol, index)
+                futures = {}
+                for idx, symbol in enumerate(batch_symbols, start=batch_start):
+                    # We pass global_idx for logging purposes inside, but NOT for UI
+                    futures[executor.submit(analyze_symbol, symbol, idx + 1, total)] = (symbol, idx + 1)
                 
-                # Wait for batch to complete
+                # Wait for batch to complete and update progress in MAIN thread
+                completed_in_batch = 0
                 for future in as_completed(futures):
+                    sym, g_idx = futures[future]
+                    completed_in_batch += 1
+                    
+                    # Update UI from main thread
+                    if progress_callback and g_idx % 5 == 0: # Update every 5 stocks
+                        pct = int(15 + (g_idx / max(total, 1) * 55))
+                        pct = min(70, pct)
+                        progress_callback(f"Analyzing {sym} ({g_idx}/{total})...", pct)
+                    
                     try:
                         future.result()
                     except Exception as e:
-                        print(f"   ⚠️ Thread error: {e}")
+                        print(f"   ⚠️ Thread error for {sym}: {e}")
+
+                # Explicitly clear memory after each batch
+                gc.collect()
 
                 if batch_end < total:
                     print("😴 Resting 15 seconds before next batch (avoiding rate limits)...")
@@ -807,7 +814,7 @@ class FixedUltimateStrategyAnalyzer:
                     'symbol': symbol,
                     'score': round(inst_score, 2),
                     'quality_score': result['quality_score'],
-                    'recommendation': 'BUY' if inst_score >= 75 else 'WEAK BUY',
+                    'recommendation': 'BUY' if inst_score >= 70 else 'WEAK BUY',
                     'perspective': 'Institutional',
                     'fundamentals_grade': result['fundamentals']['grade'],
                     'risk_level': result['risk']['risk_level'],
@@ -841,7 +848,7 @@ class FixedUltimateStrategyAnalyzer:
                     'symbol': symbol,
                     'score': round(hf_score, 2),
                     'quality_score': result['quality_score'],
-                    'recommendation': 'BUY' if hf_score >= 70 else 'WEAK BUY',
+                    'recommendation': 'BUY' if hf_score >= 65 else 'WEAK BUY',
                     'perspective': 'Hedge Fund',
                     'momentum_grade': result['momentum']['grade'],
                     'trend': result['momentum'].get('price_trend', 'Unknown'),
@@ -875,7 +882,7 @@ class FixedUltimateStrategyAnalyzer:
                     'symbol': symbol,
                     'score': round(value_score, 2),
                     'quality_score': result['quality_score'],
-                    'recommendation': 'BUY' if value_score >= 75 else 'WEAK BUY',
+                    'recommendation': 'BUY' if value_score >= 70 else 'WEAK BUY',
                     'perspective': 'Quant Value',
                     'fundamentals_grade': result['fundamentals']['grade'],
                     'pe_ratio': result['fundamentals'].get('pe_ratio'),
@@ -909,7 +916,7 @@ class FixedUltimateStrategyAnalyzer:
                     'symbol': symbol,
                     'score': round(risk_score, 2),
                     'quality_score': result['quality_score'],
-                    'recommendation': 'BUY' if risk_score >= 80 else 'WEAK BUY',
+                    'recommendation': 'BUY' if risk_score >= 75 else 'WEAK BUY',
                     'perspective': 'Risk-Managed',
                     'risk_level': result['risk']['risk_level'],
                     'beta': result['risk'].get('beta'),
@@ -1263,15 +1270,15 @@ class FixedUltimateStrategyAnalyzer:
         quality_score = quality_score or 0.0
 
         if agreement == 4:
-            if avg_score >= 82 and quality_score >= 80:
+            if avg_score >= 78 and quality_score >= 75:
                 return 'STRONG BUY'
             return 'BUY'
         if agreement == 3:
-            if avg_score >= 78 and quality_score >= 76:
+            if avg_score >= 74 and quality_score >= 72:
                 return 'BUY'
             return 'WEAK BUY'
         if agreement == 2:
-            if avg_score >= 72 and quality_score >= 70:
+            if avg_score >= 68 and quality_score >= 65:
                 return 'WEAK BUY'
             return 'HOLD'
         return 'HOLD'

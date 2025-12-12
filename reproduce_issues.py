@@ -52,17 +52,15 @@ def test_fundamental_data():
     for symbol in symbols:
         print(f"\nAnalyzing {symbol}...")
         try:
+            print(f"Calling get_better_fundamentals for {symbol}...")
+            fund = fetcher.get_better_fundamentals(symbol)
+            print(f"Fundamentals retrieved.")
+            
             result = analyzer.analyze_stock(symbol)
             if result.get('success'):
                 print(f"✅ Success: Quality Score {result.get('quality_score')}")
             else:
                 print(f"❌ Failed: {result.get('error')}")
-                # Check if we can see the raw info
-                data = fetcher.get_comprehensive_stock_data(symbol)
-                info = data.get('info', {})
-                print(f"   Raw Info keys: {list(info.keys())[:5]}")
-                if '_fundamental_error' in info:
-                    print(f"   Fundamental Error: {info['_fundamental_error']}")
         except Exception as e:
             print(f"❌ Exception: {e}")
 
@@ -72,11 +70,9 @@ test_fundamental_data()
 print("\n--- Testing Parallel Batch Processing ---")
 try:
     from ultimate_strategy_analyzer_fixed import FixedUltimateStrategyAnalyzer
-    # Mock the analyzer to avoid full initialization overhead if possible, 
-    # but we need the real method. We'll just instantiate it.
-    # Note: This might require API keys or other setup.
-    # If it fails to init, we'll skip.
-    analyzer = FixedUltimateStrategyAnalyzer()
+    from advanced_data_fetcher import AdvancedDataFetcher
+    fetcher = AdvancedDataFetcher()
+    analyzer = FixedUltimateStrategyAnalyzer(fetcher)
     symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA"]
     print(f"Running batch analysis on {len(symbols)} symbols...")
     start_time = time.time()

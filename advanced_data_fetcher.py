@@ -523,7 +523,7 @@ class AdvancedDataFetcher:
             buf_out, buf_err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
                 # Use adjusted OHLC to avoid dividend/split distortions
-                return yf.download(symbol, period="2y", progress=False, show_errors=False, auto_adjust=True)
+                return yf.download(symbol, period="2y", progress=False, auto_adjust=True)
     
     def _try_different_periods(self, symbol):
         """Try different time periods"""
@@ -903,12 +903,20 @@ class AdvancedDataFetcher:
                     
                     # Minimal prompt to save tokens and time
                     prompt = "What is the current value of the VIX index? Provide only the number."
-                    response = xai.generate_response(prompt, model="grok-beta") # Use fast model
+                    # FIX: Use .chat() instead of .generate_response()
+                    messages = [{"role": "user", "content": prompt}]
+                    result = xai.chat(messages) # Returns a dict (parsed JSON or raw)
                     
-                    if response:
+                    response_text = ""
+                    if 'raw' in result:
+                        response_text = str(result['raw'])
+                    else:
+                        response_text = str(result)
+                    
+                    if response_text:
                         import re
                         # Extract first float found
-                        match = re.search(r"(\d+\.\d+)", response)
+                        match = re.search(r"(\d+\.\d+)", response_text)
                         if match:
                             vix_val = float(match.group(1))
                             if 5.0 <= vix_val <= 150.0:
