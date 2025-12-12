@@ -49,16 +49,11 @@ class MarketTimingSignal:
         """
         
         # Extract market data
-        vix = market_context.get('vix_proxy') or market_context.get('vix', 20.0)
-        spy_return = market_context.get('spy_return_1d', 0.0)
-        spy_vol = market_context.get('spy_vol_20', 0.015)
-        regime = market_context.get('regime', 'neutral')
-        trend = market_context.get('trend', 'sideways')
-        yield_curve = market_context.get('yield_curve_slope', 0.0)
+        vix = market_context.get('vix_proxy') or market_context.get('vix')
         
-        # Handle None values
-        if vix is None or vix == 0:
-            vix = 20.0
+        # Handle None/Zero values
+        if vix == 0:
+            vix = None
         if spy_return is None:
             spy_return = 0.0
         if spy_vol is None:
@@ -96,7 +91,7 @@ class MarketTimingSignal:
             'confidence': int(composite_score),
             'brief_reason': brief_reason,
             'position_sizing': position_sizing,
-            'vix_level': round(vix, 2),
+            'vix_level': round(vix, 2) if vix else None,
             'market_regime': regime,
             'spy_return_1d': round(spy_return * 100, 2),
             'details': {
@@ -110,6 +105,9 @@ class MarketTimingSignal:
     
     def _analyze_vix(self, vix: float) -> Tuple[float, str]:
         """Analyze VIX level and return score (0-100) and signal"""
+        if vix is None:
+            return 50, "VIX Unavailable - Neutral"
+            
         if vix < 12:
             return 100, "Extremely calm (VIX < 12) - Complacent"
         elif vix < 15:
@@ -182,7 +180,7 @@ class MarketTimingSignal:
         """Generate signal, action, and position sizing based on score"""
         
         # Crisis override (VIX > 35 regardless of score)
-        if vix > 35:
+        if vix and vix > 35:
             return 'CRISIS', 'STOP - PRESERVE CAPITAL', 'NONE'
         
         # Score-based signals
@@ -209,29 +207,31 @@ class MarketTimingSignal:
     ) -> str:
         """Generate brief reason for the signal"""
         
+        vix_str = f"{vix:.1f}" if vix else "N/A"
+        
         if signal == 'STRONG_BUY':
-            return f"Low VIX ({vix:.1f}), {regime} regime, {trend} trend. Ideal entry conditions."
+            return f"Low VIX ({vix_str}), {regime} regime, {trend} trend. Ideal entry conditions."
         
         elif signal == 'BUY':
-            return f"VIX {vix:.1f}, {regime} regime. Good risk/reward for new positions."
+            return f"VIX {vix_str}, {regime} regime. Good risk/reward for new positions."
         
         elif signal == 'CAUTIOUS_BUY':
-            return f"VIX {vix:.1f}. Enter with smaller positions, scale as conditions improve."
+            return f"VIX {vix_str}. Enter with smaller positions, scale as conditions improve."
         
         elif signal == 'WAIT':
-            return f"VIX {vix:.1f}, mixed signals. Wait for better entry opportunity."
+            return f"VIX {vix_str}, mixed signals. Wait for better entry opportunity."
         
         elif signal == 'HOLD':
-            return f"Elevated VIX ({vix:.1f}), uncertain trend. Not ideal for new entries."
+            return f"Elevated VIX ({vix_str}), uncertain trend. Not ideal for new entries."
         
         elif signal == 'TAKE_PROFITS':
-            return f"High VIX ({vix:.1f}), negative trend. Consider taking profits."
+            return f"High VIX ({vix_str}), negative trend. Consider taking profits."
         
         elif signal == 'CRISIS':
-            return f"Crisis level VIX ({vix:.1f}). Preserve capital, wait for stabilization."
+            return f"Crisis level VIX ({vix_str}). Preserve capital, wait for stabilization."
         
         else:
-            return f"VIX {vix:.1f}, {regime} regime, {trend} trend."
+            return f"VIX {vix_str}, {regime} regime, {trend} trend."
     
     def format_for_display(self, timing_signal: Dict) -> str:
         """Format timing signal for terminal display"""

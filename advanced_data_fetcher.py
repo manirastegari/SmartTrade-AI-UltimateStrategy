@@ -902,27 +902,55 @@ class AdvancedDataFetcher:
                     print("⚠️ Standard VIX sources failed, asking xAI for current VIX...")
                     
                     # Minimal prompt to save tokens and time
-                    prompt = "What is the current value of the VIX index? Provide only the number."
+                    # "last known" or "closing" bypasses some real-time data refusals
+                    prompt = "What was the last known closing value of the CBOE VIX index? Return ONLY the number (e.g., 15.42)."
                     # FIX: Use .chat() instead of .generate_response()
                     messages = [{"role": "user", "content": prompt}]
-                    result = xai.chat(messages) # Returns a dict (parsed JSON or raw)
+                    result = xai.chat(messages) # Returns a dict
                     
                     response_text = ""
-                    if 'raw' in result:
-                        response_text = str(result['raw'])
+                    # Try to extract content cleanly first
+                    if isinstance(result, dict):
+                        if 'content' in result:
+                            response_text = str(result['content'])
+                        elif 'raw' in result:
+                            response_text = str(result['raw'])
+                        else:
+                            response_text = str(result)
                     else:
                         response_text = str(result)
                     
                     if response_text:
                         import re
-                        # Extract first float found
-                        match = re.search(r"(\d+\.\d+)", response_text)
-                        if match:
-                            vix_val = float(match.group(1))
-                            if 5.0 <= vix_val <= 150.0:
-                                vix_proxy = vix_val
-                                vix_data_source = "xai_fallback"
-                                print(f"✅ VIX retrieved via xAI: {vix_proxy:.2f}")
+                        # Look for VIX number: explicit "VIX: 15.2" or standalone number
+                        # Handle both integers and decimals
+                        # Prioritize number near "VIX" if possible, otherwise first reasonable number
+                        
+                        # 1. Try explicit format first
+                        match_explicit = re.search(r"VIX\D*(\d+(?:\.\d+)?)", response_text, re.IGNORECASE)
+                        if match_explicit:
+                            vix_val = float(match_explicit.group(1))
+                        else:
+                            # 2. Just find the first number that looks like a VIX value (5-100)
+                            matches = re.findall(r"(\d+(?:\.\d+)?)", response_text)
+                            vix_val = None
+                            for m in matches:
+                                try:
+                                    val = float(m)
+                                    if 5.0 <= val <= 150.0:
+                                        vix_val = val
+                                        break
+                                except:
+                                    continue
+
+                        if vix_val and 5.0 <= vix_val <= 150.0:
+                            vix_proxy = vix_val
+                            vix_data_source = "xai_fallback"
+                            print(f"✅ VIX retrieved via xAI: {vix_proxy:.2f}")
+                        else:
+                            print(f"⚠️ xAI response unparsable: {response_text[:100]}...")
+                except Exception as e:
+                    print(f"❌ xAI VIX fallback failed: {e}")
                 except Exception as e:
                     print(f"❌ xAI VIX fallback failed: {e}")
 
