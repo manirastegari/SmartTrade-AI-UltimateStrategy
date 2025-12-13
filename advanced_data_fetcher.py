@@ -66,14 +66,7 @@ class AdvancedDataFetcher:
                 )
         except Exception:
             _env_key = None
-        _repo_key = None
-        if alpha_vantage_key is None and _env_key is None:
-            try:
-                from api_keys import ALPHA_VANTAGE_API_KEY as _CFG_AV
-                _repo_key = _CFG_AV
-            except Exception:
-                _repo_key = None
-        self.alpha_vantage_key = alpha_vantage_key or _env_key or _repo_key
+        self.alpha_vantage_key = alpha_vantage_key or _env_key
         self.fred_api_key = fred_api_key
         if self.alpha_vantage_key:
             print("🔑 Alpha Vantage key detected (will use as last-resort fallback)")
@@ -662,62 +655,7 @@ class AdvancedDataFetcher:
 
     def _generate_synthetic_data(self, symbol: str):
         """Generate synthetic data for testing when APIs are down"""
-        try:
-            import numpy as np
-            from datetime import datetime, timedelta
-            
-            # Generate 500 days of synthetic data
-            dates = pd.date_range(end=datetime.now(), periods=500, freq='D')
-            
-            # Base price varies by symbol (simulate different price ranges)
-            symbol_hash = hash(symbol) % 1000
-            base_price = 50 + (symbol_hash / 10)  # Price between 50-150
-            
-            # Generate realistic price movement
-            np.random.seed(symbol_hash)  # Consistent data for same symbol
-            returns = np.random.normal(0.001, 0.02, 500)  # Daily returns
-            prices = [base_price]
-            
-            for ret in returns[1:]:
-                new_price = prices[-1] * (1 + ret)
-                prices.append(max(1.0, new_price))  # Minimum price of $1
-            
-            # Create OHLCV data
-            closes = np.array(prices)
-            opens = np.roll(closes, 1)
-            opens[0] = closes[0]
-            
-            # Generate highs and lows
-            daily_ranges = np.random.uniform(0.01, 0.05, 500)  # 1-5% daily range
-            highs = closes * (1 + daily_ranges/2)
-            lows = closes * (1 - daily_ranges/2)
-            
-            # Ensure OHLC logic is correct
-            for i in range(500):
-                high_val = max(opens[i], closes[i], highs[i])
-                low_val = min(opens[i], closes[i], lows[i])
-                highs[i] = high_val
-                lows[i] = low_val
-            
-            # Generate volume
-            base_volume = 1000000 + (symbol_hash * 10000)
-            volumes = np.random.lognormal(np.log(base_volume), 0.5, 500)
-            
-            # Create DataFrame
-            df = pd.DataFrame({
-                'Open': opens,
-                'High': highs,
-                'Low': lows,
-                'Close': closes,
-                'Volume': volumes.astype(int)
-            }, index=dates)
-            
-            print(f"Generated synthetic data for {symbol}: {len(df)} days, price range ${df['Close'].min():.2f}-${df['Close'].max():.2f}")
-            return df
-            
-        except Exception as e:
-            print(f"Failed to generate synthetic data for {symbol}: {e}")
-            return None
+        return None
 
     def get_market_context(self, force_refresh: bool = False, max_age_minutes: int = 10):
         """Fetch SPY and VIX proxy once per run and cache the result.
@@ -828,7 +766,7 @@ class AdvancedDataFetcher:
             # A simple proxy is 100 * 20-day historical volatility of SPY
             def estimate_vix_from_spy():
                 try:
-                    if spy_vol_20 > 0:
+                    if spy_vol_20 and spy_vol_20 > 0:
                         # Annualize 20-day vol (approx sqrt(252) * vol)
                         # This is a rough proxy but better than nothing
                         est_vix = spy_vol_20 * np.sqrt(252) * 100
@@ -837,126 +775,154 @@ class AdvancedDataFetcher:
                     return None
                 return None
 
+            # --- VIX fetchers: prioritize sources that return ACTUAL VIX index ---
+            def _fetch_vix_cnbc():
+                """Fetch actual VIX index from CNBC (free, reliable)"""
+                try:
+                    url = 'https://www.cnbc.com/quotes/.VIX'
+                    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+                    resp = requests.get(url, headers=headers, timeout=10)
+                    if resp.status_code == 200:
+                        import re
+                        # CNBC returns VIX in JSON: "last":"15.74"
+                        match = re.search(r'"last":"([\d.]+)"', resp.text)
+                        if match:
+                            vix = float(match.group(1))
+                            if 5.0 <= vix <= 100.0:  # Sanity check
+                                return vix
+                except Exception:
+                    pass
+                return None
+
+            def _fetch_vix_polygon():
+                """Fetch VIX from Polygon.io (requires paid plan for index data)"""
+                try:
+                    import os
+                    api_key = os.environ.get('POLYGON_API_KEY')
+                    if not api_key:
+                        return None
+                    url = f"https://api.polygon.io/v2/aggs/ticker/I:VIX/prev?adjusted=true&apiKey={api_key}"
+                    resp = requests.get(url, timeout=10)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get('results') and len(data['results']) > 0:
+                            vix = float(data['results'][0].get('c', 0))
+                            if 5.0 <= vix <= 100.0:
+                                return vix
+                except Exception:
+                    pass
+                return None
+
+            def _fetch_vix_from_vixy_apis():
+                """Fallback: Get VIXY price and estimate VIX (less accurate)"""
+                # VIXY tracks VIX futures, not spot VIX. Use rough conversion.
+                # Typical relationship: VIX ≈ VIXY * 0.55 (approximate)
+                try:
+                    import os
+                    # Try Finnhub first
+                    api_key = os.environ.get('FINNHUB_API_KEY')
+                    if api_key:
+                        url = f"https://finnhub.io/api/v1/quote?symbol=VIXY&token={api_key}"
+                        resp = requests.get(url, timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if data.get('c') and data['c'] > 0:
+                                vixy = float(data['c'])
+                                # VIXY ≈ $28, VIX ≈ 15.74. Ratio ≈ 0.56
+                                estimated_vix = vixy * 0.56
+                                if 5.0 <= estimated_vix <= 100.0:
+                                    return estimated_vix
+                except Exception:
+                    pass
+                return None
+
             vix_data_source = "default"
             
-            # Try multiple sources for VIX data
-            vix_sources = [
-                ("yfinance_VIX", lambda: _safe_yf_daily("^VIX")),  # Direct VIX index
-                ("yfinance_VIXY", lambda: _safe_yf_daily("VIXY")),  # VIX ETF
-                ("yfinance_VXX", lambda: _safe_yf_daily("VXX")),   # Alternative VIX ETF
-                ("yfinance_UVXY", lambda: _safe_yf_daily("UVXY")), # 2x VIX ETF
-                ("stooq_vix", lambda: self._fetch_stooq_history("^VIX")),
-                ("stooq_vixy", lambda: self._fetch_stooq_history("vixy.us")),
-                ("spy_proxy", lambda: pd.DataFrame({'Close': [estimate_vix_from_spy()]}) if estimate_vix_from_spy() else None)
-            ] + (  # Removed broken web scrapers that were returning erroneous values (e.g. 299.65)
-                [
-                    ("paid_VIXY", lambda: paid_manager.get_stock_data("VIXY", "1mo")),
-                    ("paid_VXX", lambda: paid_manager.get_stock_data("VXX", "1mo")),
-                    ("paid_UVXY", lambda: paid_manager.get_stock_data("UVXY", "1mo")),
-                ] if paid_manager else []
-            )
+            # Try sources in order of accuracy (real VIX index first)
+            vix_sources_priority = [
+                ("cnbc_vix", _fetch_vix_cnbc),            # Best: actual VIX index
+                ("polygon_vix", _fetch_vix_polygon),      # Paid: actual VIX index
+                ("vixy_estimated", _fetch_vix_from_vixy_apis),  # Fallback: estimated from VIXY
+            ]
+
+
             
-            for source_name, fetch_func in vix_sources:
+            for source_name, fetch_func in vix_sources_priority:
                 try:
-                    vix_df = fetch_func()
-                    if vix_df is not None and not vix_df.empty:
-                        vix_last = float(vix_df['Close'].iloc[-1])
-                        
-                        # Convert different VIX instruments to VIX-like values
-                        if "VIX" in source_name and "^VIX" in source_name:
-                            # Direct VIX index - use as is (no artificial cap - VIX can exceed 80 in crises)
-                            vix_proxy = max(5.0, vix_last)
-                        elif "VIXY" in source_name:
-                            # VIXY ETF - convert to VIX-like (rough approximation)
-                            # Removed 50.0 cap to allow crisis-level VIX readings
-                            vix_proxy = max(10.0, vix_last * 2.0)
-                        elif "VXX" in source_name:
-                            # VXX ETF - convert to VIX-like
-                            vix_proxy = max(10.0, vix_last * 1.5)
-                        elif "UVXY" in source_name:
-                            # UVXY 2x ETF - convert to VIX-like
-                            vix_proxy = max(10.0, vix_last)
-                        else:
-                            # Generic conversion
-                            vix_proxy = max(10.0, vix_last)
-                        
-                        # SANITY CHECK: VIX shouldn't be > 150 (2008 crash was ~90)
-                        if vix_proxy > 150:
-                            print(f"⚠️ Discarding erroneous VIX value {vix_proxy:.2f} from {source_name}")
-                            continue
-                        
+                    vix_val = fetch_func()
+                    if vix_val and 5.0 <= vix_val <= 150.0:
+                        vix_proxy = vix_val
                         vix_data_source = source_name
-                        try:
-                            print(f"✅ VIX proxy source: {source_name} | vix_level≈{vix_proxy:.2f}")
-                        except Exception:
-                            print(f"VIX data retrieved from {source_name}")
+                        print(f"✅ VIX source: {source_name} | vix_level={vix_proxy:.2f}")
                         break
                 except Exception:
                     continue
             
+            # If paid sources failed, try yfinance/stooq fallbacks
+            if vix_data_source == "default":
+                vix_sources = [
+                    ("yfinance_VIX", lambda: _safe_yf_daily("^VIX")),  # Direct VIX index
+                    ("yfinance_VIXY", lambda: _safe_yf_daily("VIXY")),  # VIX ETF
+                    ("yfinance_VXX", lambda: _safe_yf_daily("VXX")),   # Alternative VIX ETF
+                    ("yfinance_UVXY", lambda: _safe_yf_daily("UVXY")), # 2x VIX ETF
+                    ("yfinance_VIXM", lambda: _safe_yf_daily("VIXM")), # Mid-Term VIX Futures ETF
+                    ("stooq_vix", lambda: self._fetch_stooq_history("^VIX")),
+                    ("stooq_vixy", lambda: self._fetch_stooq_history("vixy.us")),
+                    ("stooq_vixm", lambda: self._fetch_stooq_history("vixm.us")),
+                    ("spy_proxy", lambda: pd.DataFrame({'Close': [estimate_vix_from_spy()]}) if estimate_vix_from_spy() else None)
+                ] + (  # Removed broken web scrapers that were returning erroneous values (e.g. 299.65)
+                    [
+                        ("paid_VIXY", lambda: paid_manager.get_stock_data("VIXY", "1mo")),
+                        ("paid_VXX", lambda: paid_manager.get_stock_data("VXX", "1mo")),
+                        ("paid_UVXY", lambda: paid_manager.get_stock_data("UVXY", "1mo")),
+                    ] if paid_manager else []
+                )
+            
+                for source_name, fetch_func in vix_sources:
+                    try:
+                        vix_df = fetch_func()
+                        if vix_df is not None and not vix_df.empty:
+                            vix_last = float(vix_df['Close'].iloc[-1])
+                            
+                            # Convert different VIX instruments to VIX-like values
+                            if "VIX" in source_name and "^VIX" in source_name:
+                                # Direct VIX index - use as is (no artificial cap - VIX can exceed 80 in crises)
+                                vix_proxy = max(5.0, vix_last)
+                            elif "VIXY" in source_name:
+                                # VIXY ETF - convert to VIX-like (rough approximation)
+                                # Removed 50.0 cap to allow crisis-level VIX readings
+                                vix_proxy = max(10.0, vix_last * 2.0)
+                            elif "VXX" in source_name:
+                                # VXX ETF - convert to VIX-like
+                                vix_proxy = max(10.0, vix_last * 1.5)
+                            elif "UVXY" in source_name:
+                                # UVXY 2x ETF - convert to VIX-like
+                                vix_proxy = max(10.0, vix_last)
+                            else:
+                                # Generic conversion
+                                vix_proxy = max(10.0, vix_last)
+                            
+                            # SANITY CHECK: VIX shouldn't be > 150 (2008 crash was ~90)
+                            if vix_proxy > 150:
+                                print(f"⚠️ Discarding erroneous VIX value {vix_proxy:.2f} from {source_name}")
+                                continue
+                            
+                            vix_data_source = source_name
+                            try:
+                                print(f"✅ VIX proxy source: {source_name} | vix_level≈{vix_proxy:.2f}")
+                            except Exception:
+                                print(f"VIX data retrieved from {source_name}")
+                            break
+                    except Exception:
+                        continue
+            
             # If all real sources fail, try xAI as a smart fallback (last resort)
             if vix_data_source == "default":
-                try:
-                    from xai_client import XAIClient
-                    xai = XAIClient()
-                    print("⚠️ Standard VIX sources failed, asking xAI for current VIX...")
-                    
-                    # Minimal prompt to save tokens and time
-                    # "last known" or "closing" bypasses some real-time data refusals
-                    prompt = "What was the last known closing value of the CBOE VIX index? Return ONLY the number (e.g., 15.42)."
-                    # FIX: Use .chat() instead of .generate_response()
-                    messages = [{"role": "user", "content": prompt}]
-                    result = xai.chat(messages) # Returns a dict
-                    
-                    response_text = ""
-                    # Try to extract content cleanly first
-                    if isinstance(result, dict):
-                        if 'content' in result:
-                            response_text = str(result['content'])
-                        elif 'raw' in result:
-                            response_text = str(result['raw'])
-                        else:
-                            response_text = str(result)
-                    else:
-                        response_text = str(result)
-                    
-                    if response_text:
-                        import re
-                        # Look for VIX number: explicit "VIX: 15.2" or standalone number
-                        # Handle both integers and decimals
-                        # Prioritize number near "VIX" if possible, otherwise first reasonable number
-                        
-                        # 1. Try explicit format first
-                        match_explicit = re.search(r"VIX\D*(\d+(?:\.\d+)?)", response_text, re.IGNORECASE)
-                        if match_explicit:
-                            vix_val = float(match_explicit.group(1))
-                        else:
-                            # 2. Just find the first number that looks like a VIX value (5-100)
-                            matches = re.findall(r"(\d+(?:\.\d+)?)", response_text)
-                            vix_val = None
-                            for m in matches:
-                                try:
-                                    val = float(m)
-                                    if 5.0 <= val <= 150.0:
-                                        vix_val = val
-                                        break
-                                except:
-                                    continue
+                vix_proxy = None
 
-                        if vix_val and 5.0 <= vix_val <= 150.0:
-                            vix_proxy = vix_val
-                            vix_data_source = "xai_fallback"
-                            print(f"✅ VIX retrieved via xAI: {vix_proxy:.2f}")
-                        else:
-                            print(f"⚠️ xAI response unparsable: {response_text[:100]}...")
-                except Exception as e:
-                    print(f"❌ xAI VIX fallback failed: {e}")
-                except Exception as e:
-                    print(f"❌ xAI VIX fallback failed: {e}")
-
-            # If even xAI fails (or wasn't tried), use synthetic default only if absolutely necessary logic handles None
+            # If all sources fail, keep vix_proxy as None
             if vix_data_source == "default":
-                print("⚠️ All VIX sources (including AI) failed, VIX-based macro disabled for this run")
+                print("⚠️ All VIX sources failed, VIX-based macro disabled for this run")
 
             # === Additional one-shot macro context (rate-limit friendly) ===
             def _fetch_any(symbols: list[str]):
@@ -997,7 +963,7 @@ class AdvancedDataFetcher:
                         return float((close.iloc[-1] / close.iloc[-2]) - 1.0)
                 except Exception:
                     pass
-                return 0.0
+                return None
 
             def _ratio_change_1d(df_a, df_b):
                 try:
@@ -1008,18 +974,18 @@ class AdvancedDataFetcher:
                         return (r_today / r_yday) - 1.0
                 except Exception:
                     pass
-                return 0.0
+                return None
 
             # USD index proxy (DXY futures or UUP ETF)
             usd_df = _fetch_any(["DX=F", "DX-Y.NYB", "UUP"])  # Try multiple symbols
-            usd_change_1d = _change_1d(usd_df) if usd_df is not None else 0.0
+            usd_change_1d = _change_1d(usd_df) if usd_df is not None else None
 
             # Gold and Oil proxies
             gold_df = _fetch_any(["GC=F", "GLD"])  # Gold futures or GLD ETF
-            gold_change_1d = _change_1d(gold_df) if gold_df is not None else 0.0
+            gold_change_1d = _change_1d(gold_df) if gold_df is not None else None
 
             oil_df = _fetch_any(["CL=F", "USO"])  # WTI futures or USO ETF
-            oil_change_1d = _change_1d(oil_df) if oil_df is not None else 0.0
+            oil_change_1d = _change_1d(oil_df) if oil_df is not None else None
 
             # Treasury yields and curve slope
             tnx_df = _fetch_any(["^TNX"])  # 10y yield index (~10x percent)
@@ -1027,16 +993,16 @@ class AdvancedDataFetcher:
             try:
                 y10_raw = float(tnx_df['Close'].iloc[-1]) if tnx_df is not None and not tnx_df.empty else None
                 if y10_raw is None:
-                    yield_10y = 4.0
+                    yield_10y = None
                 else:
                     # ^TNX is typically 10x the percentage (e.g., 46.5 => 4.65%)
                     yield_10y = y10_raw / 10.0 if y10_raw > 20 else (y10_raw if y10_raw > 1 else y10_raw * 100.0)
             except Exception:
-                yield_10y = 4.0
+                yield_10y = None
             try:
                 y3m_raw = float(irx_df['Close'].iloc[-1]) if irx_df is not None and not irx_df.empty else None
                 if y3m_raw is None:
-                    yield_3m = 5.0
+                    yield_3m = None
                 else:
                     # ^IRX can be percent (e.g., 5.25) or 100x percent (e.g., 525)
                     if y3m_raw > 100:
@@ -1046,24 +1012,25 @@ class AdvancedDataFetcher:
                     else:
                         yield_3m = y3m_raw * 100.0
             except Exception:
-                yield_3m = 5.0
-            yield_curve_slope = float(yield_10y - yield_3m)
+                yield_3m = None
+
+            yield_curve_slope = float(yield_10y - yield_3m) if (yield_10y is not None and yield_3m is not None) else None
 
             # Credit risk proxy (HYG/LQD), Small vs Large (IWM/SPY), XLY/XLP (cyclical vs defensive), Semis vs Market (SMH/SOXX vs SPY)
             hyg_df = _fetch_any(["HYG"])
             lqd_df = _fetch_any(["LQD"])
-            hyg_lqd_ratio_1d = _ratio_change_1d(hyg_df, lqd_df) if (hyg_df is not None and lqd_df is not None) else 0.0
+            hyg_lqd_ratio_1d = _ratio_change_1d(hyg_df, lqd_df) if (hyg_df is not None and lqd_df is not None) else None
 
             iwm_df = _fetch_any(["IWM"])
             spy_df_for_ratio = _fetch_any(["SPY", "IVV", "VOO"])  # Reuse SPY family
-            small_large_ratio_1d = _ratio_change_1d(iwm_df, spy_df_for_ratio) if (iwm_df is not None and spy_df_for_ratio is not None) else 0.0
+            small_large_ratio_1d = _ratio_change_1d(iwm_df, spy_df_for_ratio) if (iwm_df is not None and spy_df_for_ratio is not None) else None
 
             xly_df = _fetch_any(["XLY"])
             xlp_df = _fetch_any(["XLP"])
-            xly_xlp_ratio_1d = _ratio_change_1d(xly_df, xlp_df) if (xly_df is not None and xlp_df is not None) else 0.0
+            xly_xlp_ratio_1d = _ratio_change_1d(xly_df, xlp_df) if (xly_df is not None and xlp_df is not None) else None
 
             smh_df = _fetch_any(["SMH", "SOXX"])  # Try SMH then SOXX
-            semis_spy_ratio_1d = _ratio_change_1d(smh_df, spy_df_for_ratio) if (smh_df is not None and spy_df_for_ratio is not None) else 0.0
+            semis_spy_ratio_1d = _ratio_change_1d(smh_df, spy_df_for_ratio) if (smh_df is not None and spy_df_for_ratio is not None) else None
 
             ctx = {
                 # Only include computed macro values; None means unavailable
@@ -1089,8 +1056,8 @@ class AdvancedDataFetcher:
             self._market_context_ts = datetime.now()
             return ctx
         except Exception:
-            # Safe defaults - return None for VIX to indicate failure rather than fake 20.0
-            ctx = {'spy_return_1d': 0.0, 'spy_vol_20': 0.02, 'vix_proxy': None}
+            # Safe defaults: use None to indicate macro is unavailable rather than hardcoding values
+            ctx = {'spy_return_1d': None, 'spy_vol_20': None, 'vix_proxy': None}
             self._market_context_cache = ctx
             return ctx
 
@@ -1217,8 +1184,8 @@ class AdvancedDataFetcher:
             except Exception:
                 pass
             
-            # If yfinance bulk failed, fall back to individual fetching with synthetic data
-            print("Bulk yfinance failed, using individual fetch with synthetic fallback...")
+            # If yfinance bulk failed, fall back to individual fetching (no synthetic fallback)
+            print("Bulk yfinance failed, using individual fetch (no synthetic fallback)...")
             # Reset last-run failures for clear tracking on this pass
             try:
                 self.last_run_failures = []
@@ -1285,6 +1252,9 @@ class AdvancedDataFetcher:
                 cached_fundamentals = self.cache.get_cached_data(symbol, 'fundamentals')
                 if cached_fundamentals is not None:
                     return cached_fundamentals
+
+            if getattr(self, 'data_mode', None) == "light":
+                return fundamentals
 
             # 2) Create ticker with minimal delay
             ticker = yf.Ticker(symbol)
@@ -1493,56 +1463,65 @@ class AdvancedDataFetcher:
                 # Try yfinance with rate limiting protection
                 hist = self._fetch_yfinance_with_fallback(symbol)
 
-            # IMPROVEMENT #4: Use improved fundamentals with caching and backoff
-            # This prevents rate limiting while still getting real data!
+            cached_fundamentals = None
+            if self.data_mode == "light" and self.cache:
+                try:
+                    cached_fundamentals = self.cache.get_cached_data(symbol, 'fundamentals')
+                except Exception:
+                    cached_fundamentals = None
+
             try:
-                fundamentals = self.get_better_fundamentals(symbol)
-                info = {
-                    # Valuation
-                    'marketCap': fundamentals.get('market_cap', 0),
-                    'trailingPE': fundamentals.get('pe_ratio', 0),
-                    'forwardPE': fundamentals.get('forward_pe', 0),
-                    'pegRatio': fundamentals.get('peg_ratio', 0),
-                    'priceToBook': fundamentals.get('price_to_book', 0),
-                    'priceToSalesTrailing12Months': fundamentals.get('price_to_sales', 0),
-                    'enterpriseToEbitda': fundamentals.get('ev_to_ebitda', 0),
-                    'enterpriseValue': fundamentals.get('enterprise_value', 0),
+                fundamentals = None
+                if cached_fundamentals is not None:
+                    fundamentals = cached_fundamentals
+                elif self.data_mode != "light":
+                    fundamentals = self.get_better_fundamentals(symbol)
 
-                    # Profitability & Growth
-                    'profitMargins': fundamentals.get('profit_margins', 0),
-                    'operatingMargins': fundamentals.get('operating_margins', 0),
-                    'grossMargins': fundamentals.get('gross_margins', 0),
-                    'returnOnEquity': fundamentals.get('roe', 0),
-                    'returnOnAssets': fundamentals.get('roa', 0),
-                    'returnOnCapital': fundamentals.get('roic', 0),
-                    'revenueGrowth': fundamentals.get('revenue_growth', 0),
-                    'earningsGrowth': fundamentals.get('earnings_growth', 0),
-                    'earningsQuarterlyGrowth': fundamentals.get('earnings_quarterly_growth', 0),
-
-                    # Financial health
-                    'debtToEquity': fundamentals.get('debt_to_equity', 0),
-                    'currentRatio': fundamentals.get('current_ratio', 0),
-                    'quickRatio': fundamentals.get('quick_ratio', 0),
-                    'totalCash': fundamentals.get('total_cash', 0),
-                    'totalDebt': fundamentals.get('total_debt', 0),
-                    'freeCashflow': fundamentals.get('free_cashflow', 0),
-                    'operatingCashflow': fundamentals.get('operating_cashflow', 0),
-
-                    # Dividends
-                    'dividendYield': fundamentals.get('dividend_yield', 0),
-                    'dividendRate': fundamentals.get('dividend_rate', 0),
-                    'payoutRatio': fundamentals.get('payout_ratio', 0),
-
-                    # Company/Analyst context
-                    'beta': fundamentals.get('beta', 1.0),
-                    'sector': fundamentals.get('sector', 'Unknown'),
-                    'industry': fundamentals.get('industry', 'Unknown'),
-                    'targetMeanPrice': fundamentals.get('target_price', 0),
-                    'recommendationKey': fundamentals.get('recommendation', 'hold'),
-                    'numberOfAnalystOpinions': fundamentals.get('number_of_analyst_opinions', 0),
-                }
-            except Exception as e:
-                # Fallback to minimal info if fundamentals fail
+                if fundamentals is not None:
+                    info = {
+                        'marketCap': fundamentals.get('market_cap', 0),
+                        'trailingPE': fundamentals.get('pe_ratio', 0),
+                        'forwardPE': fundamentals.get('forward_pe', 0),
+                        'pegRatio': fundamentals.get('peg_ratio', 0),
+                        'priceToBook': fundamentals.get('price_to_book', 0),
+                        'priceToSalesTrailing12Months': fundamentals.get('price_to_sales', 0),
+                        'enterpriseToEbitda': fundamentals.get('ev_to_ebitda', 0),
+                        'enterpriseValue': fundamentals.get('enterprise_value', 0),
+                        'profitMargins': fundamentals.get('profit_margins', 0),
+                        'operatingMargins': fundamentals.get('operating_margins', 0),
+                        'grossMargins': fundamentals.get('gross_margins', 0),
+                        'returnOnEquity': fundamentals.get('roe', 0),
+                        'returnOnAssets': fundamentals.get('roa', 0),
+                        'returnOnCapital': fundamentals.get('roic', 0),
+                        'revenueGrowth': fundamentals.get('revenue_growth', 0),
+                        'earningsGrowth': fundamentals.get('earnings_growth', 0),
+                        'earningsQuarterlyGrowth': fundamentals.get('earnings_quarterly_growth', 0),
+                        'debtToEquity': fundamentals.get('debt_to_equity', 0),
+                        'currentRatio': fundamentals.get('current_ratio', 0),
+                        'quickRatio': fundamentals.get('quick_ratio', 0),
+                        'totalCash': fundamentals.get('total_cash', 0),
+                        'totalDebt': fundamentals.get('total_debt', 0),
+                        'freeCashflow': fundamentals.get('free_cashflow', 0),
+                        'operatingCashflow': fundamentals.get('operating_cashflow', 0),
+                        'dividendYield': fundamentals.get('dividend_yield', 0),
+                        'dividendRate': fundamentals.get('dividend_rate', 0),
+                        'payoutRatio': fundamentals.get('payout_ratio', 0),
+                        'beta': fundamentals.get('beta', 1.0),
+                        'sector': fundamentals.get('sector', 'Unknown'),
+                        'industry': fundamentals.get('industry', 'Unknown'),
+                        'targetMeanPrice': fundamentals.get('target_price', 0),
+                        'recommendationKey': fundamentals.get('recommendation', 'hold'),
+                        'numberOfAnalystOpinions': fundamentals.get('number_of_analyst_opinions', 0),
+                    }
+                else:
+                    info = {
+                        'marketCap': 0,
+                        'trailingPE': 0,
+                        'sector': 'Unknown',
+                        'beta': 1.0,
+                        'debtToEquity': 0.0,
+                    }
+            except Exception:
                 info = {
                     'marketCap': 0,
                     'trailingPE': 0,
@@ -1553,7 +1532,7 @@ class AdvancedDataFetcher:
 
             # Last-resort market cap backfill if still zero: try fast_info or compute from shares*price
             try:
-                if (info.get('marketCap', 0) or 0) == 0:
+                if self.data_mode != "light" and (info.get('marketCap', 0) or 0) == 0:
                     tk = None
                     try:
                         now = time.time()
@@ -1614,22 +1593,12 @@ class AdvancedDataFetcher:
             if self.data_mode == "light":
                 options_data = {'put_call_ratio': 1.0, 'implied_volatility': 0.2, 'options_volume': 0}
                 institutional_data = {'institutional_ownership': 0.0, 'institutional_confidence': 50, 'hedge_fund_activity': 0}
-                # Derive pseudo-fundamentals from price/volume so they vary per symbol
-                try:
-                    recent_5 = float(hist['Close'].pct_change(5).iloc[-1]) if len(hist) > 5 else 0.0
-                    recent_20 = float(hist['Close'].pct_change(20).iloc[-1]) if len(hist) > 20 else 0.0
-                    vol_20 = float(hist['Volatility_20'].iloc[-1]) if 'Volatility_20' in hist.columns else 0.02
-                    vol_ratio = float(hist['Volume_Ratio'].iloc[-1]) if 'Volume_Ratio' in hist.columns else 1.0
-                except Exception:
-                    recent_5, recent_20, vol_20, vol_ratio = 0.0, 0.0, 0.02, 1.0
-
-                # Pseudo earnings/fundamentals
                 earnings_data = {
-                    'earnings_quality_score': int(max(0, min(100, 50 + (recent_20 - vol_20) * 300))),
-                    'revenue_growth': recent_20,
-                    'earnings_growth': (recent_5 + recent_20) / 2.0,
-                    'profit_margins': max(-0.2, min(0.4, 0.05 + recent_20 - vol_20)),
-                    'return_on_equity': max(-0.2, min(0.5, 0.10 + recent_20 * 2.0 - vol_20)),
+                    'earnings_quality_score': None,
+                    'revenue_growth': None,
+                    'earnings_growth': None,
+                    'profit_margins': None,
+                    'return_on_equity': None,
                 }
 
                 # Economic (market context fetched once per run)
@@ -1654,9 +1623,7 @@ class AdvancedDataFetcher:
                 # Analyst neutral defaults
                 analyst_data = {'analyst_rating': 'Hold', 'price_target': 0.0, 'rating_changes': 0, 'analyst_consensus': 0.0, 'analyst_confidence': 50}
 
-                # Sentiment derived from price momentum and volume (0..100)
-                sentiment_raw = 50 + (recent_5 * 800) + (recent_20 * 1200) + ((vol_ratio - 1.0) * 10)
-                sentiment_score = int(max(0, min(100, sentiment_raw)))
+                sentiment_score = 50
                 news_data = {
                     'sentiment_score': sentiment_score,
                     'news_count': 0,
@@ -2804,6 +2771,8 @@ class AdvancedDataFetcher:
     def _get_options_data(self, symbol):
         """Get options data"""
         try:
+            if getattr(self, 'data_mode', None) == "light":
+                return {'put_call_ratio': 1.0, 'implied_volatility': 0.2, 'options_volume': 0}
             ticker = yf.Ticker(symbol)
             options = ticker.option_chain()
             
@@ -2843,6 +2812,21 @@ class AdvancedDataFetcher:
     def _get_earnings_data(self, symbol):
         """Get comprehensive earnings data like professional analysts"""
         try:
+            if getattr(self, 'data_mode', None) == "light":
+                return {
+                    'next_earnings_date': None,
+                    'earnings_growth': None,
+                    'revenue_growth': None,
+                    'profit_margins': None,
+                    'return_on_equity': None,
+                    'earnings_surprise': None,
+                    'earnings_beat_rate': None,
+                    'earnings_quality_score': None,
+                    'forward_pe': None,
+                    'peg_ratio': None,
+                    'earnings_consensus': None,
+                    'revenue_consensus': None,
+                }
             ticker = yf.Ticker(symbol)
             info = ticker.info
             
@@ -2903,18 +2887,26 @@ class AdvancedDataFetcher:
         """Get economic indicators"""
         try:
             return {
-                'vix': 20.0,
-                'fed_rate': 5.25,
-                'gdp_growth': 2.5,
-                'inflation': 3.0,
-                'unemployment': 3.8
+                'vix': None,
+                'fed_rate': None,
+                'gdp_growth': None,
+                'inflation': None,
+                'unemployment': None
             }
         except Exception as e:
-            return {'vix': 20.0, 'fed_rate': 5.25, 'gdp_growth': 2.5, 'inflation': 3.0, 'unemployment': 3.8}
+            return {'vix': None, 'fed_rate': None, 'gdp_growth': None, 'inflation': None, 'unemployment': None}
     
     def _get_analyst_ratings(self, symbol):
         """Get comprehensive analyst ratings like professional traders track"""
         try:
+            if getattr(self, 'data_mode', None) == "light":
+                return {
+                    'analyst_rating': 'Hold',
+                    'price_target': 0.0,
+                    'rating_changes': 0,
+                    'analyst_consensus': 0.0,
+                    'analyst_confidence': 50,
+                }
             ticker = yf.Ticker(symbol)
             info = ticker.info
             

@@ -3,11 +3,12 @@
 Premium Ultimate Strategy Analyzer
 Simplified, focused approach using 15 quality metrics instead of 200+ indicators
 
-Uses 4 investment perspectives applied to quality scores:
+Uses 5 investment perspectives applied to quality scores:
 1. Institutional Consensus (stability + quality)
 2. Hedge Fund Alpha (momentum + growth)
 3. Quant Value Hunter (value + fundamentals)
 4. Risk-Managed Core (safety + risk metrics)
+5. Investment Bank (analyst + fundamentals)
 
 Designed for 614 premium institutional-grade stocks
 """
@@ -101,10 +102,7 @@ class FixedUltimateStrategyAnalyzer:
             if self.ml_predictor.load_models():
                 print("✅ ML Enhancement enabled - Loaded REAL market models")
             else:
-                # Fallback to synthetic
-                print("⚠️ Real ML models not found - initializing with synthetic priors")
-                print("   (Will train on real data during this run)")
-                self.ml_predictor.train_with_synthetic_priors(n_samples=1000)
+                print("⚠️ Real ML models not found - ML will remain disabled until trained on REAL data")
                 self.needs_real_training = True
         
         # Initialize AI Market & Pick Validator (NEW)
@@ -161,8 +159,8 @@ class FixedUltimateStrategyAnalyzer:
         Run Premium Ultimate Strategy
         
         1. Analyze all stocks with 15 quality metrics
-        2. Apply 4 investment perspectives
-        3. Find consensus (2/4, 3/4, 4/4 agreement)
+        2. Apply 5 investment perspectives
+        3. Find consensus (3/5, 4/5, 5/5 agreement)
         4. Optional AI review and market analysis
         
         Returns:
@@ -189,11 +187,13 @@ class FixedUltimateStrategyAnalyzer:
         print(f"🎯 PREMIUM ULTIMATE STRATEGY")
         print(f"   Universe: {total_stocks} institutional-grade stocks")
         print(f"   Method: 15 quality metrics (not 200+ indicators)")
-        print(f"   Perspectives: 4 investment styles for consensus")
+        print(f"   Perspectives: 5 investment styles for consensus")
         print(f"{'='*80}\n")
         
         # STEP 1.5: Train ML on Real Data (if needed)
-        if self.needs_real_training and self.ml_predictor:
+        analyzer_enable_training = bool(getattr(self.analyzer, 'enable_training', True))
+        analyzer_data_mode = str(getattr(self.analyzer, 'data_mode', '') or '').lower()
+        if self.needs_real_training and self.ml_predictor and analyzer_enable_training and analyzer_data_mode != 'light':
             self._train_ml_on_real_data(full_universe, progress_callback)
         
         # STEP 2: Analyze market conditions
@@ -267,17 +267,18 @@ class FixedUltimateStrategyAnalyzer:
         
         # STEP 4: Apply 4 investment perspectives
         if progress_callback:
-            progress_callback("Applying 4 investment perspectives...", 70)
+            progress_callback("Applying 5 investment perspectives...", 70)
         
         print(f"\n{'='*80}")
-        print("📊 Applying 4 Investment Perspectives to Quality Scores")
+        print("📊 Applying 5 Investment Perspectives to Quality Scores")
         print(f"{'='*80}")
         
         self.strategy_results = {
             'institutional': self._apply_institutional_perspective(self.base_results),
             'hedge_fund': self._apply_hedge_fund_perspective(self.base_results),
             'quant_value': self._apply_quant_value_perspective(self.base_results),
-            'risk_managed': self._apply_risk_managed_perspective(self.base_results)
+            'risk_managed': self._apply_risk_managed_perspective(self.base_results),
+            'investment_bank': self._apply_investment_bank_perspective(self.base_results)
         }
         
         # STEP 5: Find consensus
@@ -339,10 +340,10 @@ class FixedUltimateStrategyAnalyzer:
             print("🔍 STEP 6.75: AI CATALYST & NEWS ANALYSIS")
             print(f"{'='*80}\n")
             print("Analyzing catalysts, news, and risks for TOP TIER stocks...")
-            print("(Prioritizing 4/4 agreement and highest quality picks)")
+            print("(Prioritizing 5/5 agreement and highest quality picks)")
             
             try:
-                # Analyze top tier stocks (4/4 first, then 3/4, max 10 total)
+                # Analyze top tier stocks (highest agreement first, max 10 total)
                 catalyst_results = self.catalyst_analyzer.batch_analyze_catalysts(
                     stocks=consensus_picks,
                     market_context=market_analysis,
@@ -445,6 +446,21 @@ class FixedUltimateStrategyAnalyzer:
         print("🎓 TRAINING ML MODELS ON REAL DATA")
         print(f"{'='*80}")
         
+        try:
+            analyzer_enable_training = bool(getattr(self.analyzer, 'enable_training', True))
+            analyzer_data_mode = str(getattr(self.analyzer, 'data_mode', '') or '').lower()
+        except Exception:
+            analyzer_enable_training = True
+            analyzer_data_mode = ''
+
+        if not analyzer_enable_training or analyzer_data_mode == 'light':
+            print("⚠️ ML training skipped (training disabled or light mode).")
+            return
+
+        if len(universe) < 50:
+            print("⚠️ ML training skipped (universe too small to collect enough real samples).")
+            return
+
         # Select a representative subset (top 60 liquid stocks for speed/reliability)
         training_subset = universe[:60]
         
@@ -507,11 +523,12 @@ class FixedUltimateStrategyAnalyzer:
                 
         print(f"\n   Collected {valid_count} valid training samples.")
         
-        if training_data:
+        if len(training_data) >= 50:
             self.ml_predictor.train_with_real_data(training_data)
             self.needs_real_training = False
         else:
-            print("⚠️ Could not collect enough real data. Using synthetic priors.")
+            print("⚠️ Could not collect enough real data to train ML reliably. ML disabled for this run.")
+            self.needs_real_training = True
 
     def _determine_global_trading_mode(self, market_analysis: Dict) -> str:
         """Determine high-level trading mode from market timing + AI tradability.
@@ -530,14 +547,17 @@ class FixedUltimateStrategyAnalyzer:
 
             action = str(timing.get('action', '')).upper()
             signal = str(timing.get('signal', '')).upper()
-            vix = float(market_analysis.get('vix', 0) or 0)
+            vix_raw = market_analysis.get('vix', None)
+            vix = float(vix_raw) if vix_raw is not None else None
             trade_rec = str(market_tradability.get('trade_recommendation', '')).upper() if isinstance(market_tradability, dict) else ''
 
             # Hard no-trade conditions
             if action == 'SELL' or trade_rec == 'AVOID':
                 return 'NO_NEW_TRADES'
 
-            # Defensive conditions
+            # Defensive conditions (also default to defensive if VIX is unavailable)
+            if vix is None:
+                return 'DEFENSIVE'
             if action == 'WAIT' or signal in ('WAIT', 'CAUTION') or trade_rec == 'CAUTION' or vix >= 25:
                 return 'DEFENSIVE'
 
@@ -586,7 +606,7 @@ class FixedUltimateStrategyAnalyzer:
             base += 0.25 * consensus
             base += 0.25 * ml_score
             base += 0.10 * catalyst_score
-            base += 0.10 * (25 * max(0, agreement - 2))  # 0,25,50 for 2/3/4
+            base += 0.10 * (25 * max(0, agreement - 2))  # 0,25,50,75 for 2/3/4/5
 
             # AI validation modifiers
             ai_val = str(pick.get('ai_validation', '')).upper()
@@ -927,6 +947,48 @@ class FixedUltimateStrategyAnalyzer:
         print(f"   Risk-Managed Core: {len(picks)} picks (focus: safety + low risk)")
         return picks
     
+    def _apply_investment_bank_perspective(self, quality_results: Dict) -> List[Dict]:
+        """
+        Perspective 5: Investment Bank Level
+        Focus: Analyst consensus, strong fundamentals, and earnings quality.
+        The "Wall Street" view.
+        """
+        picks = []
+        
+        for symbol, result in quality_results.items():
+            if not result.get('success'):
+                continue
+                
+            # Investment Bank Criteria (Analyst focus)
+            # 1. Strong Fundamental Score (Quality)
+            # 2. High Analyst Rating/Coverage (Wall Street Banking)
+            # TUNED: Lowered thresholds slightly to ensure valid 5/5 candidates exist
+            
+            fund_score = result['fundamentals']['score']
+            # Use sentiment score as a proxy for analyst consensus/coverage
+            analyst_score = result['sentiment']['score'] 
+            
+            if (fund_score >= 65 and analyst_score >= 55):
+                
+                # Calculate composite score for this strategy
+                ib_score = (fund_score * 0.5) + (analyst_score * 0.5)
+                
+                picks.append({
+                    'symbol': symbol,
+                    'score': round(ib_score, 2),
+                    'quality_score': result['quality_score'],
+                    'recommendation': 'BUY' if ib_score >= 65 else 'WEAK BUY',
+                    'perspective': 'Investment Bank',
+                    'fundamentals_grade': result['fundamentals']['grade'],
+                    'analyst_rating': result['sentiment'].get('analyst_rating', 'N/A'),
+                    'current_price': result['current_price']
+                })
+        
+        # Sort by score
+        picks.sort(key=lambda x: x['score'], reverse=True)
+        print(f"   🏦 Investment Bank: {len(picks)} picks (focus: analyst consensus + fundamentals)")
+        return picks
+
     def _find_consensus(self, strategy_results: Dict, market_analysis: Dict = None) -> List[Dict]:
         """
         Find stocks where multiple strategies agree
@@ -935,7 +997,7 @@ class FixedUltimateStrategyAnalyzer:
             strategy_results: Dict of strategy picks
             market_analysis: Market context for ML enhancement
         
-        Returns consensus picks with agreement counts (2/4, 3/4, 4/4)
+        Returns consensus picks with agreement counts (2/5, 3/5, 4/5, 5/5)
         """
         if market_analysis is None:
             market_analysis = {}
@@ -945,45 +1007,57 @@ class FixedUltimateStrategyAnalyzer:
         print(f"{'='*80}")
         
         # Collect all picks by symbol
-        symbol_picks = defaultdict(list)
+        symbol_map = defaultdict(list)
         
-        for strategy_name, picks in strategy_results.items():
-            for pick in picks:
-                symbol_picks[pick['symbol']].append({
-                    'strategy': strategy_name,
-                    'score': pick['score'],
-                    'perspective': pick['perspective']
-                })
+        for s in strategy_results.get('institutional', []):
+            symbol_map[s['symbol']].append({'name': 'institutional', 'score': s['score'], 'data': self.base_results.get(s['symbol'], {})})
+        for s in strategy_results.get('hedge_fund', []):
+            symbol_map[s['symbol']].append({'name': 'hedge_fund', 'score': s['score'], 'data': self.base_results.get(s['symbol'], {})})
+        for s in strategy_results.get('quant_value', []):
+            symbol_map[s['symbol']].append({'name': 'quant_value', 'score': s['score'], 'data': self.base_results.get(s['symbol'], {})})
+        for s in strategy_results.get('risk_managed', []):
+            symbol_map[s['symbol']].append({'name': 'risk_managed', 'score': s['score'], 'data': self.base_results.get(s['symbol'], {})})
+        for s in strategy_results.get('investment_bank', []):
+            symbol_map[s['symbol']].append({'name': 'investment_bank', 'score': s['score'], 'data': self.base_results.get(s['symbol'], {})})
         
         # Build consensus list
-        consensus = []
-        for symbol, picks in symbol_picks.items():
-            agreement_count = len(picks)
+        consensus_picks = []
+        for symbol, strategies in symbol_map.items():
+            count = len(strategies)
             
-            # Primary path: require at least 2/4 strategies to agree
-            if agreement_count >= 2:
-                avg_score = np.mean([p['score'] for p in picks])
-                strategies_agreeing = [p['perspective'] for p in picks]
+            # Require at least 2 strategies to agree (2/5)
+            if count >= 2:
+                # Calculate consensus score (average of strategy scores)
+                avg_score = np.mean([s['score'] for s in strategies])
                 
-                # Get base quality data
-                quality_data = self.base_results.get(symbol, {})
+                # Determine primary reasons
+                reasons = set()
+                for s in strategies:
+                    if s['name'] == 'institutional': reasons.add("Institutional Quality")
+                    if s['name'] == 'hedge_fund': reasons.add("Hedge Fund Momentum")
+                    if s['name'] == 'quant_value': reasons.add("Deep Value")
+                    if s['name'] == 'risk_managed': reasons.add("Low Risk")
+                    if s['name'] == 'investment_bank': reasons.add("Wall St Consensus")
+                    
+                # Get base data from one of the results
+                base_data = strategies[0]['data']
                 
                 # Flatten nested data structure for Excel compatibility
-                fundamentals = quality_data.get('fundamentals', {})
-                momentum = quality_data.get('momentum', {})
-                risk = quality_data.get('risk', {})
-                technical = quality_data.get('technical', {})
-                sentiment = quality_data.get('sentiment', {})
+                fundamentals = base_data.get('fundamentals', {})
+                momentum = base_data.get('momentum', {})
+                risk = base_data.get('risk', {})
+                technical = base_data.get('technical', {})
+                sentiment = base_data.get('sentiment', {})
                 
-                consensus.append({
+                consensus_picks.append({
                     'symbol': symbol,
-                    'strategies_agreeing': agreement_count,
-                    'agreeing_perspectives': strategies_agreeing,
+                    'strategies_agreeing': count,
+                    'agreeing_perspectives': [s['name'] for s in strategies],
                     'consensus_score': round(avg_score, 2),
-                    'quality_score': quality_data.get('quality_score', 0),
-                    'recommendation': self._consensus_recommendation(agreement_count, avg_score, quality_data.get('quality_score', 0)),
-                    'confidence': self._consensus_confidence(agreement_count, avg_score, quality_data.get('quality_score', 0)),
-                    'sector': quality_data.get('sector', 'Unknown'),
+                    'quality_score': base_data.get('quality_score', 0),
+                    'recommendation': self._consensus_recommendation(count, avg_score, base_data.get('quality_score', 0)).get('recommendation'),
+                    'confidence': self._consensus_recommendation(count, avg_score, base_data.get('quality_score', 0)).get('confidence'),
+                    'sector': base_data.get('sector', 'Unknown'),
                     
                     # Flattened fundamentals for Excel
                     'pe_ratio': fundamentals.get('pe_ratio'),
@@ -1042,95 +1116,18 @@ class FixedUltimateStrategyAnalyzer:
                     'technical': technical,
                     'sentiment': sentiment,
                     
-                    'current_price': quality_data.get('current_price', 0),
-                    'tier': f"{agreement_count}/4"
+                    'current_price': base_data.get('current_price', 0),
+                    'tier': f"{count}/5"
                 })
-            else:
-                # Fallback: allow 1-strategy picks ONLY when overall quality is very high
-                quality_data = self.base_results.get(symbol, {})
-                quality_score = quality_data.get('quality_score', 0)
-                if quality_score >= 85:
-                    avg_score = np.mean([p['score'] for p in picks])
-                    strategies_agreeing = [p['perspective'] for p in picks]
-
-                    fundamentals = quality_data.get('fundamentals', {})
-                    momentum = quality_data.get('momentum', {})
-                    risk = quality_data.get('risk', {})
-                    technical = quality_data.get('technical', {})
-                    sentiment = quality_data.get('sentiment', {})
-
-                    consensus.append({
-                        'symbol': symbol,
-                        'strategies_agreeing': agreement_count,
-                        'agreeing_perspectives': strategies_agreeing,
-                        'consensus_score': round(avg_score, 2),
-                        'quality_score': quality_score,
-                        'recommendation': self._consensus_recommendation(agreement_count, avg_score, quality_score),
-                        'confidence': self._consensus_confidence(agreement_count, avg_score, quality_score),
-                        'sector': quality_data.get('sector', 'Unknown'),
-
-                        'pe_ratio': fundamentals.get('pe_ratio'),
-                        'revenue_growth': fundamentals.get('revenue_growth'),
-                        'profit_margin': fundamentals.get('profit_margin'),
-                        'roe': fundamentals.get('roe'),
-                        'debt_equity': fundamentals.get('debt_equity'),
-                        'fundamentals_score': fundamentals.get('score'),
-                        'fundamentals_grade': fundamentals.get('grade'),
-
-                        'rsi_14': momentum.get('rsi'),
-                        'price_trend': momentum.get('price_trend', 'neutral'),
-                        'relative_strength': momentum.get('relative_strength'),
-                        'volume_trend': momentum.get('volume_trend'),
-                        'momentum_score': momentum.get('score'),
-                        'momentum_grade': momentum.get('grade'),
-                        'ma_50': momentum.get('ma_50'),
-                        'ma_200': momentum.get('ma_200'),
-                        'volume_ratio': momentum.get('volume_ratio'),
-
-                        'beta': risk.get('beta', 1),
-                        'volatility': risk.get('volatility'),
-                        'sharpe_ratio': risk.get('sharpe_ratio'),
-                        'max_drawdown': risk.get('max_drawdown'),
-                        'var_95': risk.get('var_95'),
-                        'risk_score': risk.get('score'),
-                        'risk_grade': risk.get('grade'),
-                        'risk_level': risk.get('risk_level', 'Unknown'),
-
-                        'macd': technical.get('macd'),
-                        'macd_signal': technical.get('macd_signal'),
-                        'macd_hist': technical.get('macd_hist'),
-                        'bollinger_position': technical.get('bollinger_position'),
-                        'support_level': technical.get('support'),
-                        'resistance_level': technical.get('resistance'),
-                        'technical_score': technical.get('score'),
-                        'technical_grade': technical.get('grade'),
-                        'bollinger_upper': technical.get('bollinger_upper'),
-                        'bollinger_lower': technical.get('bollinger_lower'),
-                        'volume_sma': technical.get('volume_sma'),
-
-                        'sentiment_score': sentiment.get('score'),
-                        'sentiment_grade': sentiment.get('grade'),
-                        'target_upside': sentiment.get('target_upside'),
-                        'institutional_ownership': sentiment.get('institutional_ownership'),
-                        'analyst_rating': sentiment.get('analyst_rating'),
-
-                        'fundamentals': fundamentals,
-                        'momentum': momentum,
-                        'risk': risk,
-                        'technical': technical,
-                        'sentiment': sentiment,
-
-                        'current_price': quality_data.get('current_price', 0),
-                        'tier': f"{agreement_count}/4 (high-quality single-strategy)"
-                    })
         
         # Sort by agreement count, then score
-        consensus.sort(key=lambda x: (x['strategies_agreeing'], x['consensus_score']), reverse=True)
+        consensus_picks.sort(key=lambda x: (x['strategies_agreeing'], x['consensus_score']), reverse=True)
         
     # ML Enhancement: Add ML predictions to consensus picks
-        if self.ml_predictor and ML_AVAILABLE:
-            print(f"\n🤖 Enhancing {len(consensus)} consensus picks with ML predictions...")
-            for pick in consensus:
+        ml_ready = bool(self.ml_predictor and ML_AVAILABLE and getattr(self.ml_predictor, 'is_trained', False))
+        if ml_ready:
+            print(f"\n🤖 Enhancing {len(consensus_picks)} consensus picks with ML predictions...")
+            for pick in consensus_picks:
                 try:
                     # Add market context to pick for ML feature extraction
                     pick['market_context'] = market_analysis
@@ -1163,7 +1160,7 @@ class FixedUltimateStrategyAnalyzer:
             
             # Re-sort by ML-enhanced metrics
             # Primary: strategies agreeing, Secondary: ML probability * consensus score
-            consensus.sort(
+            consensus_picks.sort(
                 key=lambda x: (
                     x['strategies_agreeing'],
                     (x.get('ml_probability', 0.5) * x['consensus_score'])
@@ -1171,14 +1168,16 @@ class FixedUltimateStrategyAnalyzer:
                 reverse=True
             )
             print(f"✅ ML enhancement complete - picks re-ranked by ML probability")
+        elif self.ml_predictor and ML_AVAILABLE:
+            print("⚠️ ML enhancement skipped (no trained real models loaded)")
         
         # Compute global trading mode and per-pick entry score (regime-aware)
         self.global_trading_mode = self._determine_global_trading_mode(market_analysis)
-        for pick in consensus:
+        for pick in consensus_picks:
             pick['entry_score'] = self._compute_entry_score(pick, market_analysis)
 
         downgraded_counts = {'strong_buy_to_buy': 0, 'buy_to_weak': 0, 'weak_to_hold': 0}
-        for pick in consensus:
+        for pick in consensus_picks:
             ml_prob_raw = pick.get('ml_probability')
             has_ml = ml_prob_raw is not None
             ml_prob = None
@@ -1235,8 +1234,8 @@ class FixedUltimateStrategyAnalyzer:
                 print(f"   • {downgraded_counts['weak_to_hold']} symbols downgraded from WEAK BUY to HOLD")
 
         # Diagnostic: Sample first consensus pick data structure
-        if consensus:
-            sample = consensus[0]
+        if consensus_picks:
+            sample = consensus_picks[0]
             print(f"\n🔍 DIAGNOSTIC - Sample consensus pick data structure:")
             print(f"   Symbol: {sample.get('symbol')}")
             print(f"   Quality Score: {sample.get('quality_score')}")
@@ -1253,47 +1252,90 @@ class FixedUltimateStrategyAnalyzer:
             print(f"   Nested fundamentals dict exists: {bool(sample.get('fundamentals'))}")
         
         # Print summary
-        tier_counts = {4: 0, 3: 0, 2: 0}
-        for pick in consensus:
+        tier_counts = {5: 0, 4: 0, 3: 0, 2: 0}
+        for pick in consensus_picks:
             tier_counts[pick['strategies_agreeing']] = tier_counts.get(pick['strategies_agreeing'], 0) + 1
         
         print(f"\n📊 Consensus Summary:")
-        print(f"   4/4 Agreement (STRONG BUY): {tier_counts[4]} stocks")
-        print(f"   3/4 Agreement (BUY): {tier_counts[3]} stocks")
-        print(f"   2/4 Agreement (WEAK BUY): {tier_counts[2]} stocks")
-        print(f"   Total Consensus: {len(consensus)} stocks")
+        print(f"   5/5 Agreement (ULTIMATE BUY): {tier_counts[5]} stocks")
+        print(f"   4/5 Agreement (STRONG BUY): {tier_counts[4]} stocks")
+        print(f"   3/5 Agreement (BUY): {tier_counts[3]} stocks")
+        print(f"   2/5 Agreement (WEAK BUY): {tier_counts[2]} stocks")
+        print(f"   Total Consensus: {len(consensus_picks)} stocks")
         
-        return consensus
+        return consensus_picks
     
-    def _consensus_recommendation(self, agreement: int, avg_score: float, quality_score: Optional[float] = None) -> str:
+    def _consensus_recommendation(self, agreement: int, avg_score: float, quality_score: Optional[float] = None) -> Dict:
         """Determine recommendation based on agreement, consensus strength, and underlying quality."""
         quality_score = quality_score or 0.0
 
-        if agreement == 4:
-            if avg_score >= 78 and quality_score >= 75:
-                return 'STRONG BUY'
-            return 'BUY'
-        if agreement == 3:
-            if avg_score >= 74 and quality_score >= 72:
-                return 'BUY'
-            return 'WEAK BUY'
-        if agreement == 2:
-            if avg_score >= 68 and quality_score >= 65:
-                return 'WEAK BUY'
-            return 'HOLD'
-        return 'HOLD'
-    
-    def _consensus_confidence(self, agreement: int, avg_score: float, quality_score: Optional[float] = None) -> float:
-        """Calculate confidence based on agreement, consensus strength, and quality."""
-        quality_score = quality_score or 0.0
-        base_conf = {4: 0.92, 3: 0.83, 2: 0.72}.get(agreement, 0.60)
-
-        # Reward only the highest quality/score combinations
-        if avg_score >= 85 and quality_score >= 82:
-            return min(0.98, base_conf + 0.06)
-        if avg_score < 70 or quality_score < 68:
-            return max(0.60, base_conf - 0.10)
-        return base_conf
+        if agreement == 5:
+            if avg_score >= 80 and quality_score >= 78:
+                return {
+                    'recommendation': 'ULTIMATE BUY',
+                    'confidence': 0.98,
+                    'risk_level': 'Lowest',
+                    'action': 'Buy Aggressively'
+                }
+            else:
+                return {
+                    'recommendation': 'STRONG BUY',
+                    'confidence': 0.92,
+                    'risk_level': 'Low',
+                    'action': 'Buy'
+                }
+        elif agreement == 4:
+            if avg_score >= 75 and quality_score >= 70:
+                return {
+                    'recommendation': 'STRONG BUY',
+                    'confidence': 0.90,
+                    'risk_level': 'Low',
+                    'action': 'Buy'
+                }
+            else:
+                return {
+                    'recommendation': 'BUY',
+                    'confidence': 0.85,
+                    'risk_level': 'Low-Medium',
+                    'action': 'Buy'
+                }
+        elif agreement == 3:
+            if avg_score >= 70 and quality_score >= 65:
+                return {
+                    'recommendation': 'BUY',
+                    'confidence': 0.80,
+                    'risk_level': 'Medium',
+                    'action': 'Accumulate'
+                }
+            else:
+                return {
+                    'recommendation': 'WEAK BUY',
+                    'confidence': 0.70,
+                    'risk_level': 'Medium-High',
+                    'action': 'Accumulate'
+                }
+        elif agreement == 2:
+            if avg_score >= 65 and quality_score >= 60:
+                return {
+                    'recommendation': 'WEAK BUY',
+                    'confidence': 0.65,
+                    'risk_level': 'High',
+                    'action': 'Watch / Speculate'
+                }
+            else:
+                return {
+                    'recommendation': 'HOLD',
+                    'confidence': 0.55,
+                    'risk_level': 'Very High',
+                    'action': 'Watch'
+                }
+        else: # 1 agreement or less (should be filtered out by _find_consensus)
+            return {
+                'recommendation': 'HOLD',
+                'confidence': 0.50,
+                'risk_level': 'Very High',
+                'action': 'Watch'
+            }
     
     def _apply_regime_filters(self, consensus_list: List[Dict], market_ctx: Dict) -> tuple:
         """
@@ -1377,14 +1419,14 @@ class FixedUltimateStrategyAnalyzer:
                 return {'available': False}
             
             # Get top picks by tier
+            tier_5_picks = [p for p in consensus_picks if p['strategies_agreeing'] == 5][:5]
             tier_4_picks = [p for p in consensus_picks if p['strategies_agreeing'] == 4][:5]
-            tier_3_picks = [p for p in consensus_picks if p['strategies_agreeing'] == 3][:5]
             
-            if not tier_4_picks and not tier_3_picks:
+            if not tier_5_picks and not tier_4_picks:
                 return {'available': False}
             
             # Build focused prompt with quality metrics
-            prompt = self._build_ai_prompt(tier_4_picks, tier_3_picks, market_ctx)
+            prompt = self._build_ai_prompt(tier_5_picks, tier_4_picks, market_ctx)
 
             # Get AI analysis
             ai_response = self._call_grok_api(prompt, xai_key)
@@ -1401,20 +1443,20 @@ class FixedUltimateStrategyAnalyzer:
             print(f"⚠️ AI review unavailable: {e}")
             return {'available': False}
     
-    def _build_ai_prompt(self, tier_4: List, tier_3: List, market: Dict) -> str:
+    def _build_ai_prompt(self, tier_5: List, tier_4: List, market: Dict) -> str:
         """Build comprehensive AI prompt synthesizing quant, ML, and market context"""
         
         # Calculate portfolio-level ML statistics
-        ml_available_count = sum(1 for p in tier_4 if p.get('ml_probability') is not None)
-        avg_ml_prob = np.mean([p.get('ml_probability', 0) for p in tier_4 if p.get('ml_probability') is not None]) if ml_available_count > 0 else 0
-        avg_ml_return = np.mean([p.get('ml_expected_return', 0) for p in tier_4 if p.get('ml_expected_return') is not None]) if ml_available_count > 0 else 0
+        ml_available_count = sum(1 for p in tier_5 if p.get('ml_probability') is not None)
+        avg_ml_prob = np.mean([p.get('ml_probability', 0) for p in tier_5 if p.get('ml_probability') is not None]) if ml_available_count > 0 else 0
+        avg_ml_return = np.mean([p.get('ml_expected_return', 0) for p in tier_5 if p.get('ml_expected_return') is not None]) if ml_available_count > 0 else 0
         
-        prompt = f"""Analyze these premium quality stock recommendations from an AI-enhanced 4-strategy consensus system.
+        prompt = f"""Analyze these premium quality stock recommendations from an AI-enhanced 5-strategy consensus system.
 
 **ANALYSIS METHODOLOGY:**
 This analysis combines THREE layers:
 1. Quant Engine: 15 quality metrics (fundamentals, momentum, risk, technical, sentiment)
-2. 4-Perspective Consensus: Institutional, Hedge Fund, Quant Value, Risk-Managed strategies  
+2. 5-Perspective Consensus: Institutional, Hedge Fund, Quant Value, Risk-Managed, Investment Bank strategies  
 3. ML Ensemble: 6 models (LightGBM, XGBoost, CatBoost, RF, GB, Neural Net) with 30 features
 
 **MARKET CONTEXT:**
@@ -1424,15 +1466,15 @@ This analysis combines THREE layers:
 - Status: {market.get('status', 'Unknown')}
 
 **PORTFOLIO-LEVEL ML INSIGHTS:**
-- ML-Enhanced Picks: {ml_available_count}/{len(tier_4)}
+- ML-Enhanced Picks: {ml_available_count}/{len(tier_5)}
 - Average ML Probability: {avg_ml_prob:.1%}
 - Average ML Expected Return: {avg_ml_return:+.1f}%
-- ML Confidence Range: {min([p.get('ml_confidence', 0) for p in tier_4 if p.get('ml_confidence') is not None] or [0]):.1%} - {max([p.get('ml_confidence', 0) for p in tier_4 if p.get('ml_confidence') is not None] or [0]):.1%}
+- ML Confidence Range: {min([p.get('ml_confidence', 0) for p in tier_5 if p.get('ml_confidence') is not None] or [0]):.1%} - {max([p.get('ml_confidence', 0) for p in tier_5 if p.get('ml_confidence') is not None] or [0]):.1%}
 
-**TOP CONSENSUS PICKS (4/4 Agreement - HIGHEST CONVICTION):**
+**TOP CONSENSUS PICKS (5/5 Agreement - ULTIMATE CONVICTION):**
 """
         
-        for pick in tier_4:
+        for pick in tier_5:
             symbol = pick['symbol']
             fund = pick.get('fundamentals', {})
             mom = pick.get('momentum', {})
@@ -1464,9 +1506,9 @@ This analysis combines THREE layers:
 {ml_section}- Price: ${pick.get('current_price', 0):.2f}
 """
         
-        if tier_3:
-            prompt += "\n**Strong Picks (3/4 Agreement):**\n"
-            for pick in tier_3[:3]:
+        if tier_4:
+            prompt += "\n**Strong Picks (4/5 Agreement):**\n"
+            for pick in tier_4[:3]:
                 ml_info = f" | ML: {pick.get('ml_probability', 0):.0%}" if pick.get('ml_probability') is not None else ""
                 prompt += f"- {pick['symbol']}: Quality {pick['quality_score']}/100, Score {pick['consensus_score']}/100{ml_info}\n"
         
@@ -1478,7 +1520,7 @@ This analysis combines THREE layers:
    - Overall market sentiment and trend alignment
 
 2. Top Pick Analysis (4-6 sentences):
-   - Best opportunities from 4/4 consensus with ML confirmation
+   - Best opportunities from 5/5 consensus with ML confirmation
    - Why ML models show high conviction (reference top ML drivers)
    - Quality metrics that support these picks
    - Entry strategy for each pick
@@ -1680,7 +1722,7 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                         pick.update(levels)
             
         # Count tiers
-        tier_counts = {4: 0, 3: 0, 2: 0}
+        tier_counts = {5: 0, 4: 0, 3: 0, 2: 0}
         for pick in consensus:
             tier_counts[pick['strategies_agreeing']] = tier_counts.get(pick['strategies_agreeing'], 0) + 1
         
@@ -1769,9 +1811,10 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             'ai_insights': ai,
             'total_stocks_analyzed': len(self.base_results),
             'consensus_picks_count': len(consensus),
-            'stocks_4_of_4': tier_counts[4],
-            'stocks_3_of_4': tier_counts[3],
-            'stocks_2_of_4': tier_counts[2],
+            'stocks_5_of_5': tier_counts[5],
+            'stocks_4_of_5': tier_counts[4],
+            'stocks_3_of_5': tier_counts[3],
+            'stocks_2_of_5': tier_counts[2],
             'analysis_type': 'PREMIUM_QUALITY_CONSENSUS',
             'analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'analysis_start_time': getattr(self, 'analysis_start_time', datetime.now()).strftime('%Y-%m-%d %H:%M:%S'),
@@ -1795,7 +1838,7 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                 export_pick = dict(pick)
                 export_pick['overall_score'] = pick.get('consensus_score')
                 export_pick['consensus_score'] = pick.get('consensus_score')
-                export_pick['strategies_agreeing_display'] = f"{pick.get('strategies_agreeing', 0)}/4"
+                export_pick['strategies_agreeing_display'] = f"{pick.get('strategies_agreeing', 0)}/5"
                 export_pick['confidence_pct'] = round(pick.get('confidence', 0) * 100, 2)
                 consensus_export.append(export_pick)
             
@@ -1869,18 +1912,18 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
         # 3) Normalize key fields so downstream consumers see real data instead of defaults
         vix_level = ctx.get('vix_proxy') or ctx.get('vix')
         if vix_level is None:
-            vix_level = 20.0
-        ctx['vix'] = float(vix_level)
+            ctx['vix'] = None
+        else:
+            ctx['vix'] = float(vix_level)
 
         spy_return = ctx.get('spy_return_1d')
-        if spy_return is None:
-            spy_return = 0.0
-            ctx['spy_return_1d'] = spy_return
 
         # Basic trend inference from daily SPY change if no explicit label provided
         existing_trend = str(ctx.get('trend', '')).lower()
         if not existing_trend or existing_trend == 'sideways':
-            if spy_return > 0.005:
+            if spy_return is None:
+                ctx['trend'] = 'sideways'
+            elif spy_return > 0.005:
                 ctx['trend'] = 'up'
             elif spy_return < -0.005:
                 ctx['trend'] = 'down'
@@ -1941,9 +1984,10 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             'market_analysis': {},
             'ai_insights': {'available': False},
             'total_stocks_analyzed': 0,
-            'stocks_4_of_4': 0,
-            'stocks_3_of_4': 0,
-            'stocks_2_of_4': 0,
+            'stocks_5_of_5': 0,
+            'stocks_4_of_5': 0,
+            'stocks_3_of_5': 0,
+            'stocks_2_of_5': 0,
             'analysis_type': 'PREMIUM_QUALITY_CONSENSUS',
             'error': 'No results generated'
         }
@@ -1956,7 +2000,7 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
         - Total stocks analyzed (ALL 613)
         - Consensus picks (filtered by 2+ agreement)
         - Market analysis summary
-        - Consensus recommendations by tier (4/4, 3/4, 2/4)
+        - Consensus recommendations by tier (5/5, 4/5, 3/5, 2/5)
         - Quality breakdowns
         - AI insights (if available)
         """
@@ -1993,14 +2037,14 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             st.caption("2+ strategies agreeing")
         
         with col3:
-            tier_4 = results.get('stocks_4_of_4', 0)
-            st.metric("🏆 4/4 Agreement", tier_4)
-            st.caption("Highest conviction")
+            tier_5 = results.get('stocks_5_of_5', 0)
+            st.metric("👑 5/5 Agreement", tier_5)
+            st.caption("Ultimate conviction")
         
         with col4:
-            tier_3 = results.get('stocks_3_of_4', 0)
-            st.metric("⭐ 3/4 Agreement", tier_3)
-            st.caption("Strong majority")
+            tier_4 = results.get('stocks_4_of_5', 0)
+            st.metric("🏆 4/5 Agreement", tier_4)
+            st.caption("Highest conviction")
         
         st.info(f"""
         **Analysis Method**: {results.get('metrics_used', '15 Quality Metrics')}
@@ -2029,18 +2073,21 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
         
         # Consensus Summary
         st.markdown("### 🏆 Consensus Summary")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("Total Analyzed", results.get('total_stocks_analyzed', 0))
         with col2:
-            count_4 = results.get('stocks_4_of_4', 0)
-            st.metric("4/4 Agreement", count_4, help="STRONG BUY - All perspectives agree")
+            count_5 = results.get('stocks_5_of_5', 0)
+            st.metric("5/5 Agreement", count_5, help="ULTIMATE BUY - All perspectives agree")
         with col3:
-            count_3 = results.get('stocks_3_of_4', 0)
-            st.metric("3/4 Agreement", count_3, help="BUY - Strong majority")
+            count_4 = results.get('stocks_4_of_5', 0)
+            st.metric("4/5 Agreement", count_4, help="STRONG BUY - Strong majority")
         with col4:
-            count_2 = results.get('stocks_2_of_4', 0)
-            st.metric("2/4 Agreement", count_2, help="WEAK BUY - Split decision")
+            count_3 = results.get('stocks_3_of_5', 0)
+            st.metric("3/5 Agreement", count_3, help="BUY - Majority agreement")
+        with col5:
+            count_2 = results.get('stocks_2_of_5', 0)
+            st.metric("2/5 Agreement", count_2, help="WEAK BUY - Split decision")
         
         # AI Market Tradability (NEW - shows if good time to trade)
         market_tradability = results.get('market_tradability')
@@ -2108,7 +2155,7 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                     why = pick.get('why_selected', 'N/A')
                     
                     # Action color
-                    if action == 'STRONG BUY':
+                    if action == 'STRONG BUY' or action == 'ULTIMATE BUY':
                         action_color = 'success'
                         emoji = '🚀'
                     elif action == 'BUY':
@@ -2266,13 +2313,13 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             if quick_signals:
                 st.info(" • ".join(quick_signals[:4]))
         
-        # 4/4 Agreement (STRONG BUY)
-        tier_4 = [p for p in consensus if p['strategies_agreeing'] == 4]
-        if tier_4:
-            st.markdown("### 🌟 4/4 Agreement - STRONG BUY (Highest Conviction)")
-            st.markdown(f"*All 4 investment perspectives agree on these {len(tier_4)} stocks*")
+        # 5/5 Agreement (ULTIMATE BUY)
+        tier_5 = [p for p in consensus if p['strategies_agreeing'] == 5]
+        if tier_5:
+            st.markdown("### 🏆 5/5 Agreement - ULTIMATE BUY (Highest Conviction)")
+            st.markdown(f"*All 5 investment perspectives agree on these {len(tier_5)} stocks*")
             
-            for pick in tier_4[:10]:  # Show top 10
+            for pick in tier_5[:10]:  # Show top 10
                 with st.expander(f"**{pick['symbol']}** - Quality Score: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f}"):
                     col1, col2 = st.columns(2)
                     
@@ -2321,12 +2368,62 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                             ai_verdict = pick.get('ai_verdict', '')
                             if ai_verdict and ai_verdict != 'No AI validation':
                                 st.markdown(f"- *{ai_verdict}*")
-        
-        # 3/4 Agreement (BUY)
+
+        # 4/5 Agreement (STRONG BUY)
+        tier_4 = [p for p in consensus if p['strategies_agreeing'] == 4]
+        if tier_4:
+            st.markdown("### 🌟 4/5 Agreement - STRONG BUY (High Conviction)")
+            st.markdown(f"*4 out of 5 perspectives agree on these {len(tier_4)} stocks*")
+            
+            for pick in tier_4[:10]:  # Show top 10
+                with st.expander(f"**{pick['symbol']}** - Quality Score: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Quality Breakdown:**")
+                        fund = pick.get('fundamentals', {})
+                        mom = pick.get('momentum', {})
+                        st.markdown(f"- Fundamentals: **{fund.get('grade', 'N/A')}** ({fund.get('score', 0):.0f}/100)")
+                        st.markdown(f"- Momentum: **{mom.get('grade', 'N/A')}** ({mom.get('score', 0):.0f}/100)")
+                        risk = pick.get('risk', {})
+                        st.markdown(f"- Risk: **{risk.get('grade', 'N/A')}** ({risk.get('score', 0):.0f}/100)")
+                        sent = pick.get('sentiment', {})
+                        st.markdown(f"- Sentiment: **{sent.get('grade', 'N/A')}** ({sent.get('score', 0):.0f}/100)")
+                    
+                    with col2:
+                        st.markdown("**Consensus Details:**")
+                        st.markdown(f"- Recommendation: **{pick['recommendation']}**")
+                        st.markdown(f"- Confidence: **{pick['confidence']*100:.0f}%**")
+                        st.markdown(f"- Consensus Score: **{pick['consensus_score']}/100**")
+                        st.markdown(f"- Perspectives: {', '.join(pick.get('agreeing_perspectives', []))}")
+                        
+                        ai_val = pick.get('ai_validation')
+                        if ai_val:
+                            st.markdown("---")
+                            st.markdown("**🤖 AI Validation:**")
+                            if ai_val == 'CONFIRMED':
+                                st.success(f"✅ {ai_val}")
+                            elif ai_val == 'REJECTED':
+                                st.error(f"❌ {ai_val}")
+                            else:
+                                st.info(f"ℹ️ {ai_val}")
+                            
+                            ai_risk = pick.get('ai_risk_level', 'N/A')
+                            ai_profit = pick.get('ai_profit_potential', 'N/A')
+                            ai_sentiment = pick.get('ai_news_sentiment', 'N/A')
+                            st.markdown(f"- Risk: **{ai_risk}**")
+                            st.markdown(f"- Profit Potential: **{ai_profit}**")
+                            st.markdown(f"- News Sentiment: **{ai_sentiment}**")
+                            
+                            ai_verdict = pick.get('ai_verdict', '')
+                            if ai_verdict and ai_verdict != 'No AI validation':
+                                st.markdown(f"- *{ai_verdict}*")
+
+        # 3/5 Agreement (BUY)
         tier_3 = [p for p in consensus if p['strategies_agreeing'] == 3]
         if tier_3:
-            st.markdown("### ⭐ 3/4 Agreement - BUY (Strong Majority)")
-            st.markdown(f"*3 out of 4 perspectives agree on these {len(tier_3)} stocks*")
+            st.markdown("### ⭐ 3/5 Agreement - BUY (Strong Majority)")
+            st.markdown(f"*3 out of 5 perspectives agree on these {len(tier_3)} stocks*")
             
             # Show condensed table
             table_data = []
@@ -2345,10 +2442,10 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             df = pd.DataFrame(table_data)
             st.dataframe(df, use_container_width=True)
         
-        # 2/4 Agreement (WEAK BUY)
+        # 2/5 Agreement (WEAK BUY)
         tier_2 = [p for p in consensus if p['strategies_agreeing'] == 2]
         if tier_2:
-            with st.expander(f"⚡ 2/4 Agreement - WEAK BUY ({len(tier_2)} stocks)"):
+            with st.expander(f"⚡ 2/5 Agreement - WEAK BUY ({len(tier_2)} stocks)"):
                 table_data = []
                 for pick in tier_2[:20]:  # Top 20
                     table_data.append({

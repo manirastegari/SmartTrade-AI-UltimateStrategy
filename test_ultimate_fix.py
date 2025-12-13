@@ -58,9 +58,10 @@ def main():
     print(f"   Total Stocks Analyzed: {total}")
     print(f"   Consensus Picks (2+ agreement): {consensus}")
     print(f"   All Analyzed Data Records: {len(all_data)}")
-    print(f"   4/4 Agreement: {results.get('stocks_4_of_4', 0)}")
-    print(f"   3/4 Agreement: {results.get('stocks_3_of_4', 0)}")
-    print(f"   2/4 Agreement: {results.get('stocks_2_of_4', 0)}")
+    print(f"   5/5 Agreement: {results.get('stocks_5_of_5', 0)}")
+    print(f"   4/5 Agreement: {results.get('stocks_4_of_5', 0)}")
+    print(f"   3/5 Agreement: {results.get('stocks_3_of_5', 0)}")
+    print(f"   2/5 Agreement: {results.get('stocks_2_of_5', 0)}")
     
     # Validation checks
     print(f"\n✅ VALIDATION CHECKS:")

@@ -154,7 +154,7 @@ try:
     if consensus:
         top_pick = consensus[0]
         print(f"   Top Pick: {top_pick['symbol']}")
-        print(f"   Agreement: {top_pick['strategies_agreeing']}/4 strategies")
+        print(f"   Agreement: {top_pick['strategies_agreeing']}/5 strategies")
         print(f"   Consensus Score: {top_pick['consensus_score']}")
         print(f"   Recommendation: {top_pick['recommendation']}")
     

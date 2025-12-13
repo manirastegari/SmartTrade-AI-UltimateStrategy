@@ -42,18 +42,12 @@ class XAIClient:
 		except Exception:
 			pass
 
-		# Prefer environment variables, then Streamlit secrets if available, then repo api_keys.py (env-only now)
+		# Prefer environment variables, then Streamlit secrets if available
 		key = api_key or os.getenv("XAI_API_KEY")
 		if not key:
 			try:
 				import streamlit as st  # type: ignore
 				key = st.secrets.get("XAI_API_KEY") if hasattr(st, "secrets") else None
-			except Exception:
-				key = None
-		if not key:
-			try:
-				from api_keys import XAI_API_KEY as KEY_FROM_REPO  # type: ignore
-				key = KEY_FROM_REPO
 			except Exception:
 				key = None
 
@@ -92,7 +86,7 @@ class XAIClient:
 	def chat(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 2000) -> Dict[str, Any]:
 		"""Call xAI chat completions with provided messages."""
 		if not self.is_configured():
-			raise RuntimeError("XAI API key not configured. Set XAI_API_KEY or add XAI_API_KEY to api_keys.py")
+			raise RuntimeError("XAI API key not configured. Set XAI_API_KEY (env) or configure Streamlit secrets")
 
 		url = f"{self.base_url}/chat/completions"
 		payload = {

@@ -22,7 +22,10 @@ print()
 # Initialize analyzer (like the app does)
 print("🔧 Initializing Advanced Trading Analyzer...")
 analyzer = AdvancedTradingAnalyzer(enable_training=False, data_mode="light")
-analyzer.stock_universe = test_universe  # Use test universe
+
+# Force Ultimate Strategy to use the 20-stock test universe
+analyzer.stock_universe = test_universe
+analyzer._get_expanded_stock_universe = lambda: list(test_universe)
 
 print(f"✅ Loaded {len(analyzer.stock_universe)} stocks for testing")
 print()
@@ -62,7 +65,7 @@ try:
                 agreement = pick.get('strategies_agreeing', 0)
                 score = pick.get('consensus_score', 0)
                 recommendation = pick.get('recommendation', 'N/A')
-                print(f"   {i}. {symbol:6s} - {agreement}/4 agreement - Score: {score:.2f} - {recommendation}")
+                print(f"   {i}. {symbol:6s} - {agreement}/5 agreement - Score: {score:.2f} - {recommendation}")
         
         # Strategy breakdown
         print(f"\n📈 Strategy Results:")

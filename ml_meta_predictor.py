@@ -248,7 +248,13 @@ class MLMetaPredictor:
         
         # Market Context (5 NEW features - critical for environment awareness)
         market = stock_data.get('market_context', {})
-        vix_level = market.get('vix', 15) or 15
+        vix_level_raw = market.get('vix')
+        vix_available = vix_level_raw is not None
+        try:
+            vix_level = float(vix_level_raw) if vix_available else 0.0
+        except Exception:
+            vix_level = 0.0
+            vix_available = False
         regime = market.get('regime', 'normal')
         trend = market.get('trend', 'SIDEWAYS')
         
@@ -262,7 +268,7 @@ class MLMetaPredictor:
             vix_level,                                    # Market fear gauge
             regime_score,                                 # Bull/Normal/Bear
             trend_score,                                  # Market direction
-            1 if vix_level < 20 else 0,                  # Low volatility flag
+            1 if (vix_available and vix_level < 20) else 0,  # Low volatility flag
             stock_data.get('sector_momentum', 0) or 0,   # Sector relative strength
         ])
         
@@ -419,8 +425,8 @@ class MLMetaPredictor:
                 continue
         
         if valid_samples < 50:
-            print(f"⚠️ Not enough valid real samples ({valid_samples}). Falling back to synthetic priors.")
-            self.train_with_synthetic_priors()
+            print(f"⚠️ Not enough valid real samples ({valid_samples}). ML will remain disabled.")
+            self.is_trained = False
             return
 
         X = np.array(X_samples, dtype=np.float32)
@@ -539,9 +545,7 @@ class MLMetaPredictor:
         if not self.is_trained:
             # Try to load saved models first
             if not self.load_models():
-                # Auto-train with synthetic priors if no saved models
-                print("⚠️ No trained models found. Initializing with synthetic priors...")
-                self.train_with_synthetic_priors()
+                raise RuntimeError("ML models unavailable (no saved real models loaded)")
         
         # Extract features
         features = self.extract_features(stock_data)
@@ -622,7 +626,7 @@ class MLMetaPredictor:
             files = os.listdir(self.model_dir)
             timestamps = set(f.split('_')[-1].replace('.joblib', '') for f in files if '.joblib' in f and 'scaler' not in f)
             if not timestamps:
-                print("⚠️ No saved models found in .ml_models - will use synthetic priors")
+                print("⚠️ No saved models found in .ml_models")
                 return False
             timestamp = max(timestamps)
         

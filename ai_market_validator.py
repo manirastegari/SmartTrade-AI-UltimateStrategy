@@ -43,7 +43,7 @@ class AIMarketValidator:
             
             client = XAIClient(api_key=self.api_key)
             
-            prompt = f"""You are an expert market analyst with access to real-time market data, news, and sentiment.
+            prompt = f"""You are an expert market analyst. You do NOT have guaranteed access to real-time market data.
 
 **Current Market Data:**
 - VIX: {market_context.get('vix', 'N/A')}
@@ -52,13 +52,11 @@ class AIMarketValidator:
 - Date: {datetime.now().strftime('%Y-%m-%d')}
 
 **Your Task:**
-Analyze if NOW is a good time to trade stocks. Consider:
-1. Current market volatility and fear levels
-2. Recent market news and events (use your knowledge)
-3. Economic indicators and Fed policy stance
-4. Geopolitical risks
-5. Seasonal patterns
-6. Market sentiment from social media (X/Twitter trends)
+Analyze if NOW is a good time to trade stocks. Use ONLY:
+1. The market context provided (VIX/regime/trend)
+2. General market principles and risk management heuristics
+
+Do NOT fabricate news, prices, events, or "current" facts. If you lack information, say so.
 
 **Provide:**
 1. Trade Recommendation: FAVORABLE, NEUTRAL, CAUTION, or AVOID
@@ -73,7 +71,7 @@ Respond as JSON with keys: trade_recommendation, confidence, brief_summary, reas
             
             response = client.chat(
                 messages=[
-                    {"role": "system", "content": "You are a market analyst providing real-time tradability assessments."},
+                    {"role": "system", "content": "You provide tradability assessments from provided context only. Do not invent facts."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,  # Low temperature for consistent analysis
@@ -136,7 +134,7 @@ Respond as JSON with keys: trade_recommendation, confidence, brief_summary, reas
                 for i, p in enumerate(picks[:10])  # Top 10 picks
             ])
             
-            prompt = f"""You are an expert stock analyst with real-time access to news, social media, and market intelligence.
+            prompt = f"""You are an expert stock analyst. You do NOT have guaranteed access to real-time news or social media.
 
 **Market Context:**
 - VIX: {market_context.get('vix', 'N/A')}
@@ -147,14 +145,9 @@ Respond as JSON with keys: trade_recommendation, confidence, brief_summary, reas
 {picks_text}
 
 **Your Expert Validation Task:**
-For EACH stock, use your knowledge of:
-1. Recent news and earnings reports
-2. Social media sentiment (X/Twitter, Reddit trends)
-3. Industry headwinds or tailwinds
-4. Hidden risks not in fundamental metrics
-5. Profit potential vs current valuation
-6. Competitive threats
-7. Regulatory or legal issues
+For EACH stock, use ONLY the provided quant context (scores/sector) and general risk heuristics.
+Do NOT fabricate recent news, earnings, legal issues, upgrades/downgrades, or "current" events.
+If insufficient information, mark fields as UNKNOWN/NEUTRAL.
 
 **For EACH stock, provide:**
 - AI Validation: CONFIRMED (good pick), NEUTRAL (ok), or REJECTED (avoid)
@@ -181,7 +174,7 @@ Respond as JSON with structure:
             
             response = client.chat(
                 messages=[
-                    {"role": "system", "content": "You are an expert stock analyst validating picks with real-time intelligence."},
+                    {"role": "system", "content": "Validate picks from provided quant context only. Do not invent facts."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,

@@ -102,25 +102,28 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
             if ai_top_picks:
                 create_ai_top_picks_sheet(ai_top_picks, writer)
             
-            # Sheet 4: Strong Buy Recommendations (consensus picks)
+            # Sheet 4: Ultimate Buy Recommendations (consensus picks)
+            create_recommendations_sheet(results, writer, 'ULTIMATE BUY', 'Ultimate_Buy')
+
+            # Sheet 5: Strong Buy Recommendations (consensus picks)
             create_recommendations_sheet(results, writer, 'STRONG BUY')
             
-            # Sheet 5: All Buy Signals (consensus picks)
-            create_recommendations_sheet(results, writer, ['STRONG BUY', 'BUY', 'WEAK BUY'], 'All_Buy_Signals')
+            # Sheet 6: All Buy Signals (consensus picks)
+            create_recommendations_sheet(results, writer, ['ULTIMATE BUY', 'STRONG BUY', 'BUY', 'WEAK BUY'], 'All_Buy_Signals')
             
-            # Sheet 6: Detailed Analysis (consensus picks)
+            # Sheet 7: Detailed Analysis (consensus picks)
             create_detailed_analysis_sheet(results, writer)
             
-            # Sheet 7: Technical Indicators (consensus picks)
+            # Sheet 8: Technical Indicators (consensus picks)
             create_technical_sheet(results, writer)
             
-            # Sheet 8: Risk Analysis (consensus picks)
+            # Sheet 9: Risk Analysis (consensus picks)
             create_risk_analysis_sheet(results, writer)
             
-            # Sheet 9: Sector Analysis (consensus picks)
+            # Sheet 10: Sector Analysis (consensus picks)
             create_sector_analysis_sheet(results, writer)
             
-            # Sheet 10: Performance Metrics (consensus picks)
+            # Sheet 11: Performance Metrics (consensus picks)
             create_performance_sheet(results, writer)
         
         # Auto-push to GitHub if requested
@@ -158,12 +161,14 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
         # New consensus format
         total_stocks = len(results)
         strong_buy = len([r for r in results if r.get('recommendation') == 'STRONG BUY'])
+        ultimate_buy = len([r for r in results if r.get('recommendation') == 'ULTIMATE BUY'])
         buy = len([r for r in results if r.get('recommendation') == 'BUY'])
         weak_buy = len([r for r in results if r.get('recommendation') == 'WEAK BUY'])
         hold = len([r for r in results if r.get('recommendation') == 'HOLD'])
         sell_signals = 0  # Not used in consensus
         
         # Consensus-specific stats
+        tier_5 = len([r for r in results if r.get('strategies_agreeing') == 5])
         tier_4 = len([r for r in results if r.get('strategies_agreeing') == 4])
         tier_3 = len([r for r in results if r.get('strategies_agreeing') == 3])
         tier_2 = len([r for r in results if r.get('strategies_agreeing') == 2])
@@ -206,9 +211,10 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 'AI Key Insight',
                 'Top Ranked Symbols',
                 '━━━━━━━━━━━━━━━━━━━━━━━━━━',
-                '4/4 Agreement (STRONG BUY)',
-                '3/4 Agreement (BUY)',
-                '2/4 Agreement (WEAK BUY)',
+                '5/5 Agreement (ULTIMATE BUY)',
+                '4/5 Agreement (STRONG BUY)',
+                '3/5 Agreement (BUY)',
+                '2/5 Agreement (WEAK BUY)',
                 'Average Quality Score',
                 'Top Performer',
                 '━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -220,7 +226,7 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 analysis_start_time if analysis_start_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 analysis_end_time if analysis_end_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 f"{analysis_duration_minutes} minutes" if analysis_duration_minutes else "N/A",
-                'Premium Ultimate Strategy - 4-Perspective Consensus',
+                'Premium Ultimate Strategy - 5-Perspective Consensus',
                 'Premium Quality Universe (614 institutional-grade stocks)',
                 f"{total_analyzed_display} stocks (complete analysis)",
                 f"{consensus_picks_display} stocks (filtered by multi-strategy agreement)",
@@ -230,8 +236,8 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 market_timing_signal.get('signal', 'N/A') if market_timing_signal else 'N/A',
                 market_timing_signal.get('position_sizing', 'N/A') if market_timing_signal else 'N/A',
                 f"{market_timing_signal.get('confidence', 0)}%" if market_timing_signal else 'N/A',
-                f"{market_timing_signal.get('vix_level', 0)}" if market_timing_signal else 'N/A',
-                f"{market_timing_signal.get('spy_return_1d', 0)}%" if market_timing_signal else 'N/A',
+                (f"{market_timing_signal.get('vix_level')}" if market_timing_signal and market_timing_signal.get('vix_level') is not None else 'N/A'),
+                (f"{market_timing_signal.get('spy_return_1d')}%" if market_timing_signal and market_timing_signal.get('spy_return_1d') is not None else 'N/A'),
                 market_timing_signal.get('market_regime', 'N/A') if market_timing_signal else 'N/A',
                 market_timing_signal.get('brief_reason', 'No timing signal available') if market_timing_signal else 'No timing signal available',
                 '',  # Separator
@@ -245,15 +251,16 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 ai_top_picks.get('key_insight', 'N/A') if ai_top_picks else 'N/A',
                 ', '.join([p.get('symbol', 'N/A') for p in ai_top_picks.get('ai_top_picks', [])[:5]]) if ai_top_picks else 'N/A',
                 '',  # Separator
-                f"{tier_4} stocks (all perspectives agree)",
-                f"{tier_3} stocks (strong majority)",
-                f"{tier_2} stocks (split decision)",
+                f"{tier_5} stocks (all 5 perspectives agree)",
+                f"{tier_4} stocks (4 of 5 agree)",
+                f"{tier_3} stocks (3 of 5 agree)",
+                f"{tier_2} stocks (2 of 5 agree)",
                 f"{avg_quality:.1f}/100",
                 f"{top_performer} ({max([r.get('quality_score', 0) for r in results]):.0f}/100)" if results else 'N/A',
                 '',  # Separator
                 '15 Quality Metrics: Fundamentals 40%, Momentum 30%, Risk 20%, Sentiment 10%',
                 'Guardrails: DISABLED (pre-screened) | Regime Filters: RELAXED',
-                str(analysis_params) if analysis_params else 'Premium Ultimate Strategy - 4-Perspective Consensus'
+                str(analysis_params) if analysis_params else 'Premium Ultimate Strategy - 5-Perspective Consensus'
             ]
         }
     else:
@@ -455,8 +462,8 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
             data.append({
                 'Rank': pick.get('rank', 0),
                 'Symbol': pick.get('symbol', 'N/A'),
-                'Name': pick.get('name', 'N/A'),
-                'Sector': pick.get('sector', 'N/A'),
+                # 'Name': pick.get('name', 'N/A'), # Removed as per user request
+                # 'Sector': pick.get('sector', 'N/A'), # Removed as per user request
                 'Current Price': current_price,
                 'Buy Zone': buy_zone,
                 'Take Profit': take_profit,
@@ -476,13 +483,12 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
     column_widths = {
         'A': 6,   # Rank
         'B': 10,  # Symbol
-        'C': 25,  # Name
-        'D': 20,  # Sector
-        'E': 12,  # Current Price
-        'F': 20,  # Buy Zone
-        'G': 20,  # Take Profit
-        'H': 15,  # AI Confidence
-        'I': 60   # Reasoning
+        'B': 10,  # Symbol
+        'C': 12,  # Current Price
+        'D': 20,  # Buy Zone
+        'E': 20,  # Take Profit
+        'F': 15,  # AI Confidence
+        'G': 60   # Reasoning
     }
     for col_letter, width in column_widths.items():
         worksheet.column_dimensions[col_letter].width = width
@@ -539,7 +545,7 @@ def create_recommendations_sheet(results, writer, recommendation_types, sheet_na
             recommendations_data.append({
                 'Symbol': result.get('symbol', ''),
                 'Recommendation': result.get('recommendation', ''),
-                'Agreement': f"{result.get('strategies_agreeing', 0)}/4",
+                'Agreement': f"{result.get('strategies_agreeing', 0)}/5",
                 
                 # Ultimate Score (NEW - combines all layers)
                 'Ultimate Score': ultimate_score if ultimate_score is not None else 'N/A',
@@ -640,7 +646,7 @@ def create_detailed_analysis_sheet(results, writer):
             detailed_data.append({
                 'Symbol': result.get('symbol', ''),
                 'Recommendation': result.get('recommendation', ''),
-                'Agreement': f"{result.get('strategies_agreeing', 0)}/4",
+                'Agreement': f"{result.get('strategies_agreeing', 0)}/5",
                 
                 # Ultimate Score (NEW - combines Quality + Consensus + ML)
                 'Ultimate Score': ultimate_score if ultimate_score is not None else None,
@@ -919,8 +925,23 @@ def create_sector_analysis_sheet(results, writer):
         })
 
     sector_df = pd.DataFrame(sector_data)
-    if 'Avg Score' in sector_df.columns:
-        sector_df = sector_df.sort_values('Avg Score', ascending=False)
+    
+    # Sort by number of stocks (using 'Total Stocks' from the DataFrame)
+    if 'Total Stocks' in sector_df.columns:
+        sector_df = sector_df.sort_values('Total Stocks', ascending=False)
+    
+    # Filter out empty/unknown sectors if they clutter the report, unless they have stocks
+    sector_df = sector_df[~((sector_df['Sector'].isin(['Unknown', 'N/A'])) & (sector_df['Total Stocks'] == 0))]
+    
+    # If practically no sector data exists, add an explanatory row
+    if sector_df.empty or (len(sector_df) == 1 and sector_df.iloc[0]['Sector'] == 'Unknown' and sector_df.iloc[0]['Total Stocks'] > 0):
+         # If there's only 'Unknown' but it has stocks, keep it. Otherwise, show message.
+         if sector_df.empty:
+             sector_df = pd.DataFrame({'Message': ['Sector data unavailable from current data sources.']})
+         else: # Only 'Unknown' sector with stocks, clarify it's uncategorized
+             sector_df.loc[sector_df['Sector'] == 'Unknown', 'Sector'] = 'Uncategorized'
+             sector_df = sector_df.rename(columns={'Sector': 'Sector (Uncategorized)'})
+             
     sector_df.to_excel(writer, sheet_name='Sector_Analysis', index=False)
 
 def create_performance_sheet(results, writer):
@@ -948,9 +969,11 @@ def create_performance_sheet(results, writer):
                 'Average Quality Score',
                 'Median Quality Score',
                 'Average Confidence %',
-                '4/4 Agreement Count',
-                '3/4 Agreement Count',
-                '2/4 Agreement Count',
+                '5/5 Agreement Count',
+                '4/5 Agreement Count',
+                '3/5 Agreement Count',
+                '2/5 Agreement Count',
+                'Ultimate Buy Count',
                 'Strong Buy Count',
                 'Buy Count',
                 'Weak Buy Count',
@@ -968,9 +991,11 @@ def create_performance_sheet(results, writer):
                 f"{np.mean(quality_scores):.2f}",
                 f"{np.median(quality_scores):.2f}",
                 f"{np.mean(confidences):.1f}%",
+                len([r for r in results if r.get('strategies_agreeing') == 5]),
                 len([r for r in results if r.get('strategies_agreeing') == 4]),
                 len([r for r in results if r.get('strategies_agreeing') == 3]),
                 len([r for r in results if r.get('strategies_agreeing') == 2]),
+                len([r for r in results if r.get('recommendation') == 'ULTIMATE BUY']),
                 len([r for r in results if r.get('recommendation') == 'STRONG BUY']),
                 len([r for r in results if r.get('recommendation') == 'BUY']),
                 len([r for r in results if r.get('recommendation') == 'WEAK BUY']),

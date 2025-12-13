@@ -189,25 +189,27 @@ st.sidebar.markdown("## 🎯 Analysis Parameters")
 # Professional analysis options
 analysis_type = st.sidebar.selectbox(
     "Analysis Type",
-    ["🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)", 
+    ["🏆 Ultimate Strategy + AI (Automated 5-Perspective Consensus)", 
      "Institutional Grade", "Hedge Fund Style", "Investment Bank Level", "Quant Research", "Risk Management"]
 )
 
 # Show description for Ultimate Strategy
-if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)":
+if analysis_type == "🏆 Ultimate Strategy + AI (Automated 5-Perspective Consensus)":
     st.sidebar.success("""
     **🏆 Ultimate Strategy + AI (True Consensus + AI Review):**
     
-    All 4 strategies analyze THE SAME 614 premium stocks:
+    All 5 perspectives analyze THE SAME premium stock universe:
     1. Institutional Consensus (stability focus)
     2. Hedge Fund Alpha (momentum focus)
     3. Quant Value Hunter (value focus)
     4. Risk-Managed Core (safety focus)
+    5. Investment Bank (analyst/sentiment proxy)
     
     **Logic:** Finds stocks where MULTIPLE strategies agree
-    - 4/4 agree = STRONG BUY (95% confidence, LOWEST RISK)
-    - 3/4 agree = STRONG BUY (85% confidence, LOW RISK)
-    - 2/4 agree = BUY (75% confidence, MEDIUM RISK)
+    - 5/5 agree = ULTIMATE BUY (highest conviction)
+    - 4/5 agree = STRONG BUY (high conviction)
+    - 3/5 agree = BUY (strong majority)
+    - 2/5 agree = WEAK BUY (lower conviction)
     
     **Premium Universe:** 614 institutional-grade stocks
     - Market cap >$2B, 5+ year track records
@@ -222,7 +224,19 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus
     """)
 
 # Determine if Ultimate Strategy is selected to simplify sidebar
-is_ultimate = (analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)")
+is_ultimate = (analysis_type == "🏆 Ultimate Strategy + AI (Automated 5-Perspective Consensus)")
+
+# For Ultimate Strategy: Show only a single prominent Run button
+if is_ultimate:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 🚀 One-Click Analysis")
+    run_ultimate_analysis = st.sidebar.button(
+        "🏆 RUN ULTIMATE STRATEGY",
+        use_container_width=True,
+        type="primary",
+        help="Analyzes all 614+ premium stocks with 5-perspective consensus + AI review"
+    )
+    st.sidebar.info("⏱️ Takes 60-90 minutes for full analysis")
 
 # Toggle ML training (optional: longer run, potentially higher accuracy)
 if not is_ultimate:
@@ -341,35 +355,44 @@ def get_comprehensive_symbol_selection(analyzer, cap_filter: str, market_focus: 
         return universe[:min(count, len(universe))]
     
     # Define market focus symbol sets
+    # Define market focus symbol sets dynamically from the main universe
+    # This prevents having stale hardcoded lists
+    
+    # Helper to filter from the LIVE universe (ensure we only pick valid stocks)
+    def filter_universe(universe, symbols_to_find=None):
+        if symbols_to_find:
+            return [s for s in universe if s in symbols_to_find]
+        return universe
+
     market_focus_symbols = {
-        "S&P 500 Large Cap": [
+        "S&P 500 Large Cap": filter_universe(universe, [
             'AAPL','MSFT','GOOGL','AMZN','META','NVDA','TSLA','NFLX','AMD','INTC',
             'JPM','BAC','WFC','GS','MS','C','AXP','V','MA','PYPL',
             'JNJ','PFE','UNH','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN',
             'KO','PEP','WMT','PG','HD','MCD','NKE','SBUX','DIS','CMCSA'
-        ],
-        "NASDAQ Growth": [
+        ]),
+        "NASDAQ Growth": filter_universe(universe, [
             'AAPL','MSFT','GOOGL','AMZN','META','NVDA','TSLA','NFLX','AMD',
             'PLTR','CRWD','SNOW','DDOG','NET','OKTA','ZM','DOCU','TWLO',
             'ROKU','PINS','SNAP','UBER','LYFT','ABNB','DASH','PTON'
-        ],
-        "Russell 2000 Small Cap": [
+        ]),
+        "Russell 2000 Small Cap": filter_universe(universe, [
             'PLTR','CRWD','SNOW','DDOG','NET','OKTA','ZM','DOCU','TWLO','SQ',
             'ROKU','PINS','SNAP','UBER','LYFT','ABNB','DASH','PTON','FUBO','RKT',
             'OPEN','COMP','Z','ZG','ESTC','MDB','TEAM','WDAY','NOW','ZS'
-        ],
-        "Momentum Stocks": [
+        ]),
+        "Momentum Stocks": filter_universe(universe, [
             'NVDA','TSLA','AMD','PLTR','CRWD','SNOW','NET','ROKU','UBER','SQ',
             'ABNB','DASH','ZM','DOCU','PINS','SNAP','PTON','FUBO','RKT','OPEN'
-        ],
-        "Value Stocks": [
+        ]),
+        "Value Stocks": filter_universe(universe, [
             'JPM','BAC','WFC','GS','MS','C','V','MA','JNJ','PFE','UNH',
             'KO','PEP','WMT','PG','HD','MCD','CVX','XOM','COP','CAT','BA'
-        ],
-        "Dividend Aristocrats": [
+        ]),
+        "Dividend Aristocrats": filter_universe(universe, [
             'JNJ','PG','KO','PEP','WMT','HD','MCD','CVX','XOM','CAT',
             'MMM','GE','HON','UPS','FDX','VZ','T','NEE','DUK','SO'
-        ]
+        ])
     }
     
     # Get base symbols by cap filter
@@ -390,8 +413,15 @@ def get_comprehensive_symbol_selection(analyzer, cap_filter: str, market_focus: 
     if market_focus in market_focus_symbols:
         focus_symbols = market_focus_symbols[market_focus]
         # Prioritize symbols that match both cap filter and market focus
-        prioritized = [s for s in base_symbols if s in focus_symbols]
-        remaining = [s for s in base_symbols if s not in focus_symbols]
+        # BUT if focus list is small, just return the focus list + fillers
+        if len(focus_symbols) < 10:
+             # If focus list is too small, just return it as is + fill from universe
+             prioritized = focus_symbols
+        else:
+             prioritized = focus_symbols
+        
+        # Merge: Focus symbols first, then others to fill count
+        remaining = [s for s in base_symbols if s not in prioritized]
         base_symbols = prioritized + remaining
     elif market_focus == "Sector Rotation":
         # Mix of different sectors for rotation strategy
@@ -572,16 +602,24 @@ def apply_guardrails(results,
 
     return kept, removed
 
-if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
+# Determine which button to check based on analysis type
+if is_ultimate:
+    # Ultimate Strategy uses the dedicated button defined earlier in sidebar
+    should_run_analysis = run_ultimate_analysis
+else:
+    # Other analysis types use the generic button
+    should_run_analysis = st.sidebar.button("🚀 Run Professional Analysis", type="primary")
+
+if should_run_analysis:
     
     # Check if Ultimate Strategy is selected
-    if analysis_type == "🏆 Ultimate Strategy + AI (Automated 4-Strategy Consensus)":
+    if is_ultimate:
         
         st.markdown("---")
-        st.markdown("# 🏆 ULTIMATE STRATEGY + AI - AUTOMATED 4-STRATEGY CONSENSUS")
-        st.markdown("### Running all 4 optimal strategies automatically + AI review...")
+        st.markdown("# 🏆 ULTIMATE STRATEGY + AI - AUTOMATED 5-PERSPECTIVE CONSENSUS")
+        st.markdown("### Running all 5 perspectives automatically + AI review...")
         
-        # Initialize FIXED Ultimate Strategy Analyzer (optimized - 45 min instead of 8+ hours)
+        # Initialize FIXED Ultimate Strategy Analyzer (optimized - 60-90 min)
         ultimate_analyzer = FixedUltimateStrategyAnalyzer(analyzer)
         
         # Progress tracking
@@ -593,9 +631,9 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
             progress_bar.progress(progress)
         
         # Run Ultimate Strategy
-        with st.spinner("Running Ultimate Strategy Analysis (this will take 45–60 minutes)..."):
+        with st.spinner("Running Ultimate Strategy Analysis (this will take 60–90 minutes)..."):
             
-            st.info("⏱️ **Estimated Time:** 45–60 minutes for complete 4-strategy analysis + AI review")
+            st.info("⏱️ **Estimated Time:** 60–90 minutes for complete 5-perspective analysis + AI review")
             st.info("☕ **Tip:** Sit back while we finalize the consensus and AI review.")
             
             final_recommendations = ultimate_analyzer.run_ultimate_strategy(
@@ -885,10 +923,20 @@ if st.sidebar.button("🚀 Run Professional Analysis", type="primary"):
                 </div>
                 """, unsafe_allow_html=True)
             with colD:
+                vix_val = mc.get('vix_proxy')
+                curve_slope_val = mc.get('yield_curve_slope')
+                try:
+                    vix_display = f"{float(vix_val):.1f}" if vix_val is not None else "N/A"
+                except Exception:
+                    vix_display = "N/A"
+                try:
+                    curve_display = f"{float(curve_slope_val):+.2f}" if curve_slope_val is not None else "N/A"
+                except Exception:
+                    curve_display = "N/A"
                 st.markdown(f"""
                 <div class="metric-card">
                     <h4>VIX • Curve Slope</h4>
-                    <div class="price-big">{mc.get('vix_proxy', 20):.1f} • {mc.get('yield_curve_slope', 0.0):+.2f}</div>
+                    <div class="price-big">{vix_display} • {curve_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
         except Exception:

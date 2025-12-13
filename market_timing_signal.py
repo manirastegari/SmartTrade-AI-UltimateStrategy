@@ -4,7 +4,7 @@ Market Timing Signal Generator
 Provides clear, actionable BUY / WAIT / TAKE PROFITS signals based on market conditions
 """
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 class MarketTimingSignal:
     """
@@ -51,19 +51,15 @@ class MarketTimingSignal:
         # Extract market data
         # Extract market data
         vix = market_context.get('vix_proxy') or market_context.get('vix')
-        spy_return = market_context.get('spy_return_1d', 0.0)
-        spy_vol = market_context.get('spy_vol_20', 0.015)
+        spy_return = market_context.get('spy_return_1d')
+        spy_vol = market_context.get('spy_vol_20')
         regime = market_context.get('regime', 'neutral')
         trend = market_context.get('trend', 'sideways')
-        yield_curve = market_context.get('yield_curve_slope', 0.0)
+        yield_curve = market_context.get('yield_curve_slope')
         
         # Handle None/Zero values
         if vix == 0:
             vix = None
-        if spy_return is None:
-            spy_return = 0.0
-        if spy_vol is None:
-            spy_vol = 0.015
             
         # Analyze each component
         vix_score, vix_signal = self._analyze_vix(vix)
@@ -99,7 +95,7 @@ class MarketTimingSignal:
             'position_sizing': position_sizing,
             'vix_level': round(vix, 2) if vix else None,
             'market_regime': regime,
-            'spy_return_1d': round(spy_return * 100, 2),
+            'spy_return_1d': round(float(spy_return) * 100, 2) if spy_return is not None else None,
             'details': {
                 'vix_signal': vix_signal,
                 'trend_signal': trend_signal,
@@ -109,7 +105,7 @@ class MarketTimingSignal:
             }
         }
     
-    def _analyze_vix(self, vix: float) -> Tuple[float, str]:
+    def _analyze_vix(self, vix: Optional[float]) -> Tuple[float, str]:
         """Analyze VIX level and return score (0-100) and signal"""
         if vix is None:
             return 50, "VIX Unavailable - Neutral"
@@ -129,8 +125,10 @@ class MarketTimingSignal:
         else:
             return 5, "Extreme (VIX > 40) - Crisis mode"
     
-    def _analyze_trend(self, spy_return: float, trend: str) -> Tuple[float, str]:
+    def _analyze_trend(self, spy_return: Optional[float], trend: str) -> Tuple[float, str]:
         """Analyze market trend and return score"""
+        if spy_return is None:
+            return 50, "SPY Return Unavailable - Neutral"
         if trend == 'up' or spy_return > 0.01:
             return 90, "Strong uptrend"
         elif trend == 'up' or spy_return > 0.003:
@@ -154,8 +152,10 @@ class MarketTimingSignal:
         else:
             return 50, "Unknown regime"
     
-    def _analyze_volatility(self, spy_vol: float) -> Tuple[float, str]:
+    def _analyze_volatility(self, spy_vol: Optional[float]) -> Tuple[float, str]:
         """Analyze volatility level"""
+        if spy_vol is None:
+            return 50, "Volatility Unavailable - Neutral"
         if spy_vol < 0.01:
             return 90, "Low volatility"
         elif spy_vol < 0.015:
@@ -165,8 +165,10 @@ class MarketTimingSignal:
         else:
             return 30, "High volatility"
     
-    def _analyze_yield_curve(self, slope: float) -> float:
+    def _analyze_yield_curve(self, slope: Optional[float]) -> float:
         """Analyze yield curve (minor factor)"""
+        if slope is None:
+            return 50
         if slope > 1.0:
             return 80  # Steep positive curve = healthy
         elif slope > 0:
@@ -255,10 +257,12 @@ class MarketTimingSignal:
         output += f"Signal: {signal} (Confidence: {confidence}%)\n"
         output += f"Position Sizing: {position_sizing}\n"
         output += f"Reason: {reason}\n"
+        vix_val = timing_signal.get('vix_level')
+        spy_ret = timing_signal.get('spy_return_1d')
         output += f"\nMarket Conditions:\n"
-        output += f"  VIX: {timing_signal['vix_level']}\n"
-        output += f"  SPY 1D Return: {timing_signal['spy_return_1d']}%\n"
-        output += f"  Regime: {timing_signal['market_regime']}\n"
+        output += f"  VIX: {vix_val if vix_val is not None else 'N/A'}\n"
+        output += f"  SPY 1D Return: {(str(spy_ret) + '%') if spy_ret is not None else 'N/A'}\n"
+        output += f"  Regime: {timing_signal.get('market_regime', 'N/A')}\n"
         output += f"{'=' * 70}\n"
         
         return output
@@ -271,7 +275,7 @@ class MarketTimingSignal:
             'Position_Sizing': timing_signal['position_sizing'],
             'Confidence': f"{timing_signal['confidence']}%",
             'VIX_Level': timing_signal['vix_level'],
-            'SPY_Return_1D': f"{timing_signal['spy_return_1d']}%",
+            'SPY_Return_1D': f"{timing_signal['spy_return_1d']}%" if timing_signal.get('spy_return_1d') is not None else 'N/A',
             'Market_Regime': timing_signal['market_regime'],
             'Reason': timing_signal['brief_reason']
         }

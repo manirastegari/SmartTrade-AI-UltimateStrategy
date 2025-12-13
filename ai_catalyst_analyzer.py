@@ -66,7 +66,7 @@ class AIStockCatalystAnalyzer:
             ml_prob = stock.get('ml_probability', 0)
             sector = stock.get('sector', 'Unknown')
             
-            prompt = f"""You are an expert stock analyst with real-time knowledge. Analyze {symbol} in detail.
+            prompt = f"""You are an expert stock analyst. You do NOT have guaranteed access to real-time news. Analyze {symbol} in detail.
 
 **Stock Overview:**
 - Symbol: {symbol}
@@ -82,7 +82,7 @@ class AIStockCatalystAnalyzer:
 
 **Deep Analysis Required:**
 
-1. **Recent News & Events** (last 2 weeks):
+1. **Recent News & Events** (only if you are confident):
    - Earnings reports (beat/meet/miss?)
    - Product launches or announcements
    - Management changes
@@ -141,8 +141,8 @@ class AIStockCatalystAnalyzer:
 }}
 
 IMPORTANT: 
-- Be specific with dates and numbers if available
-- Use your real-time knowledge (Nov 2025)
+- Do NOT fabricate dates, numbers, headlines, or events.
+- If you are not confident, set fields to UNKNOWN / NEUTRAL and provide generic risk factors.
 - Focus on ACTIONABLE catalysts
 - Keep it BRIEF and FACTUAL
 """
@@ -183,7 +183,7 @@ IMPORTANT:
         
         results = []
         
-        # Prioritize top stocks (4/4 agreement, highest quality)
+        # Prioritize top stocks (highest agreement, highest quality)
         sorted_stocks = sorted(
             stocks,
             key=lambda x: (

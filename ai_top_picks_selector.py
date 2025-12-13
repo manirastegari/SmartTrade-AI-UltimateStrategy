@@ -69,7 +69,7 @@ class AITopPicksSelector:
             
             prompt = f"""You are an expert stock picker analyzing {len(picks_summary)} stocks using complete intelligence:
 - Quality metrics (fundamentals, momentum, risk, sentiment)
-- Multi-strategy consensus (4 investment perspectives)
+- Multi-strategy consensus (5 investment perspectives)
 - ML predictions (30-feature model)
 - Real-time validation (news, sentiment, hidden risks)
 
@@ -199,7 +199,7 @@ IMPORTANT: Keep it BRIEF. One sentence per pick. Clear actions."""
             # Concise one-line summary
             line = (
                 f"{symbol}: Quality={quality:.0f} | Consensus={consensus:.0f} | "
-                f"Agreement={agreement}/4 | ML={ml_prob*100:.0f}% (+{ml_return:.1f}%) | "
+                f"Agreement={agreement}/5 | ML={ml_prob*100:.0f}% (+{ml_return:.1f}%) | "
                 f"Ultimate={ultimate:.0f} | AI={ai_val}/{ai_risk}/{ai_profit} | News={sentiment}"
             )
             summary_lines.append(line)
@@ -241,7 +241,7 @@ IMPORTANT: Keep it BRIEF. One sentence per pick. Clear actions."""
             elif ai_val == 'REJECTED':
                 ai_bonus = -20
             
-            # Bonus for 4/4 agreement
+            # Bonus for higher agreement (2/5..5/5)
             agreement_bonus = (pick.get('strategies_agreeing', 0) - 2) * 5
             
             # Penalty for high AI risk
@@ -306,8 +306,10 @@ IMPORTANT: Keep it BRIEF. One sentence per pick. Clear actions."""
             
             # Why selected (brief)
             reasons = []
-            if pick.get('strategies_agreeing', 0) == 4:
-                reasons.append('4/4 consensus')
+            if pick.get('strategies_agreeing', 0) == 5:
+                reasons.append('5/5 consensus')
+            elif pick.get('strategies_agreeing', 0) == 4:
+                reasons.append('4/5 consensus')
             if pick.get('quality_score', 0) >= 85:
                 reasons.append('top quality')
             if ai_val == 'CONFIRMED':
@@ -348,7 +350,7 @@ IMPORTANT: Keep it BRIEF. One sentence per pick. Clear actions."""
             f"{strong_buys} STRONG BUY rated. Average AI score: {avg_score:.0f}/100."
         )
         
-        key_insight = "Focus on 4/4 consensus picks with AI confirmation for highest confidence."
+        key_insight = "Focus on 5/5 and 4/5 consensus picks with AI confirmation for highest confidence."
         
         return {
             'ai_top_picks': top_picks,

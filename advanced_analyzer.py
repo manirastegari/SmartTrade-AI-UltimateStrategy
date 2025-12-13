@@ -65,15 +65,7 @@ class AdvancedTradingAnalyzer:
                 )
         except Exception:
             _env_key = None
-        # Optional repo-level hardcoded key as final source
-        _repo_key = None
-        if alpha_vantage_key is None and _env_key is None:
-            try:
-                from api_keys import ALPHA_VANTAGE_API_KEY as _CFG_AV
-                _repo_key = _CFG_AV
-            except Exception:
-                _repo_key = None
-        self._alpha_vantage_key = alpha_vantage_key or _env_key or _repo_key
+        self._alpha_vantage_key = alpha_vantage_key or _env_key
         self.data_fetcher = AdvancedDataFetcher(self._alpha_vantage_key, fred_api_key, data_mode=data_mode)
         self.models = {}
         self.scalers = {}
