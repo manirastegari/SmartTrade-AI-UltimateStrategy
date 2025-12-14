@@ -862,8 +862,8 @@ class FixedUltimateStrategyAnalyzer:
                 result['risk']['score'] * 0.20
             )
             
-            # Hedge fund threshold: prefer momentum (unchanged)
-            if hf_score >= 60:
+            # Hedge fund threshold: relaxed slightly (60→55) to enable 5/5 agreement
+            if hf_score >= 55:
                 picks.append({
                     'symbol': symbol,
                     'score': round(hf_score, 2),
@@ -930,8 +930,8 @@ class FixedUltimateStrategyAnalyzer:
                 result['momentum']['score'] * 0.10
             )
             
-            # Risk-managed threshold: prefer safety (still stricter but a bit more inclusive)
-            if risk_score >= 65:
+            # Risk-managed threshold: relaxed (65→58) to enable 5/5 agreement
+            if risk_score >= 58:
                 picks.append({
                     'symbol': symbol,
                     'score': round(risk_score, 2),
@@ -962,13 +962,13 @@ class FixedUltimateStrategyAnalyzer:
             # Investment Bank Criteria (Analyst focus)
             # 1. Strong Fundamental Score (Quality)
             # 2. High Analyst Rating/Coverage (Wall Street Banking)
-            # TUNED: Lowered thresholds slightly to ensure valid 5/5 candidates exist
+            # TUNED: Relaxed thresholds to enable 5/5 agreement on quality stocks
             
             fund_score = result['fundamentals']['score']
             # Use sentiment score as a proxy for analyst consensus/coverage
             analyst_score = result['sentiment']['score'] 
             
-            if (fund_score >= 65 and analyst_score >= 55):
+            if (fund_score >= 60 and analyst_score >= 50) or (fund_score >= 70):
                 
                 # Calculate composite score for this strategy
                 ib_score = (fund_score * 0.5) + (analyst_score * 0.5)
