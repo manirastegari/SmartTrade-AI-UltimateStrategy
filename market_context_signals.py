@@ -157,7 +157,23 @@ def get_market_context_signals() -> Dict:
 	"""High-level wrapper returning signals + regime summary."""
 	sig = get_soxx_qqq_signals()
 	summary = summarize_regime(sig)
-	return {**sig, **summary}
+	
+	# Add sector rotation data if enhanced_signals available
+	sector_data = {}
+	try:
+		from enhanced_signals import EnhancedSignalsAnalyzer
+		analyzer = EnhancedSignalsAnalyzer()
+		sector_momentum = analyzer.get_sector_momentum()
+		sector_data = {
+			'sector_momentum': sector_momentum,
+			'top_sectors': sector_momentum.get('top_3_sectors', []),
+			'bottom_sectors': sector_momentum.get('bottom_3_sectors', []),
+			'market_breadth': sector_momentum.get('market_breadth', 'UNKNOWN')
+		}
+	except Exception:
+		sector_data = {'sector_momentum': None, 'top_sectors': [], 'bottom_sectors': [], 'market_breadth': 'UNKNOWN'}
+	
+	return {**sig, **summary, **sector_data}
 
 
 def get_intraday_vwap_status(symbols: List[str], max_symbols: int = 10, sleep_s: float = 0.12) -> Dict[str, Dict]:
