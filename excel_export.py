@@ -50,7 +50,7 @@ def push_to_github(filename):
         print(f"⚠️ Git push error: {str(e)}")
         return False
 
-def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=None, all_stocks_data=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None):
+def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_push_github=None, all_stocks_data=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None, ai_universe_context=None, day_assessment=None):
     """Export analysis results to Excel with multiple sheets
     
     Optimized for Premium Quality Universe (614 institutional-grade stocks)
@@ -66,6 +66,8 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         analysis_start_time: Analysis start timestamp
         analysis_end_time: Analysis end timestamp
         analysis_duration_minutes: Total analysis duration in minutes
+        ai_universe_context: AI Phase 1 selection context (NEW)
+        day_assessment: Market Day Advisor assessment with skip warnings (NEW - Phase 2)
     """
     
     if not results and not all_stocks_data:
@@ -91,7 +93,8 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
                 ai_top_picks=ai_top_picks,
                 analysis_start_time=analysis_start_time,
                 analysis_end_time=analysis_end_time,
-                analysis_duration_minutes=analysis_duration_minutes
+                analysis_duration_minutes=analysis_duration_minutes,
+                day_assessment=day_assessment
             )
             
             # Sheet 2: ALL ANALYZED STOCKS (NEW - Critical for user visibility)
@@ -126,10 +129,11 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
             # Sheet 11: Performance Metrics (consensus picks)
             create_performance_sheet(results, writer)
         
-        # Auto-push to GitHub if requested
-        env_push = os.getenv('SMARTTRADE_AUTO_PUSH', '0').lower() in ('1', 'true', 'yes')
+        # Auto-push to GitHub if requested (ENABLED BY DEFAULT)
+        env_push = os.getenv('SMARTTRADE_AUTO_PUSH', 'true').lower() in ('1', 'true', 'yes')
         should_push = auto_push_github if auto_push_github is not None else env_push
         if should_push:
+            print("📤 Auto-pushing Excel report to GitHub...")
             push_to_github(filename)
         
         total_analyzed = len(all_stocks_data) if all_stocks_data else len(results)
@@ -139,7 +143,7 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
     except Exception as e:
         return None, f"Export failed: {str(e)}"
 
-def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None):
+def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None, ai_universe_context=None, day_assessment=None):
     """Create summary dashboard sheet
     
     Args:
@@ -152,6 +156,8 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
         analysis_start_time: Analysis start timestamp
         analysis_end_time: Analysis end timestamp
         analysis_duration_minutes: Total analysis duration in minutes
+        ai_universe_context: AI Phase 1 selection context (NEW)
+        day_assessment: Market Day Advisor assessment with skip warnings (NEW - Phase 2)
     """
     
     # Check if this is consensus format
@@ -183,6 +189,15 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
         # Create consensus summary
         summary_data = {
             'Metric': [
+                '🚦 TRADING DAY SUMMARY',
+                'Trading Action',
+                'Skip Today?',
+                'Confidence',
+                'Honest Assessment',
+                'Position Sizing Recommendation',
+                'Strategy Focus',
+                'Next Check',
+                '━━━━━━━━━━━━━━━━━━━━━━━━━━',
                 'Analysis Start Time',
                 'Analysis End Time',
                 'Total Duration (minutes)',
@@ -223,12 +238,21 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 'Analysis Parameters'
             ],
             'Value': [
+                '',  # Section header
+                f"{'🔴 SKIP' if day_assessment and day_assessment.get('skip_today') else '🟡 CAUTION' if day_assessment and day_assessment.get('warning_level') == 'YELLOW' else '🟢 TRADE'}" if day_assessment else 'N/A',
+                'YES - Wait for better conditions' if day_assessment and day_assessment.get('skip_today') else 'NO - Conditions acceptable',
+                f"{day_assessment.get('confidence', 0):.0f}%" if day_assessment else 'N/A',
+                day_assessment.get('honest_assessment', 'Day assessment not available') if day_assessment else 'Day assessment not available',
+                day_assessment.get('position_sizing', 'N/A') if day_assessment else 'N/A',
+                day_assessment.get('strategy_focus', 'N/A') if day_assessment else 'N/A',
+                day_assessment.get('next_check', 'N/A') if day_assessment else 'N/A',
+                '',  # Separator
                 analysis_start_time if analysis_start_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 analysis_end_time if analysis_end_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 f"{analysis_duration_minutes} minutes" if analysis_duration_minutes else "N/A",
                 'Premium Ultimate Strategy - 5-Perspective Consensus',
-                'Premium Quality Universe (614 institutional-grade stocks)',
-                f"{total_analyzed_display} stocks (complete analysis)",
+                f"Interactive AI Selection ({ai_universe_context.get('reasoning')[:50]}...)" if ai_universe_context else 'Premium Quality Universe (614 institutional-grade stocks)',
+                f"{total_analyzed_display} stocks (AI Focused)" if ai_universe_context else f"{total_analyzed_display} stocks (complete analysis)",
                 f"{consensus_picks_display} stocks (filtered by multi-strategy agreement)",
                 '',  # Separator
                 '',  # Section header
@@ -245,6 +269,10 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 market_tradability.get('trade_recommendation', 'N/A') if market_tradability else 'N/A',
                 f"{market_tradability.get('confidence', 0):.0f}%" if market_tradability else 'N/A',
                 market_tradability.get('brief_summary', 'AI analysis not available') if market_tradability else 'AI analysis not available',
+                '',
+                '🌍 AI UNIVERSE SELECTION',
+                f"Strategy: {ai_universe_context.get('reasoning')}" if ai_universe_context else 'N/A',
+                f"Focus Sectors: {', '.join(ai_universe_context.get('focus_sectors', []))}" if ai_universe_context else 'N/A',
                 '',
                 '',
                 f"{ai_top_picks.get('total_recommended', 0)} of {ai_top_picks.get('total_analyzed', 0)} candidates" if ai_top_picks else 'AI selection unavailable',

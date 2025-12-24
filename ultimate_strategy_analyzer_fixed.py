@@ -30,6 +30,14 @@ except ImportError:
     ML_AVAILABLE = False
     print("⚠️ ML Meta-Predictor not available - running without ML enhancement")
 
+# AI Universe Selector (NEW - Phase 1)
+try:
+    from ai_universe_selector import AIUniverseSelector
+    AI_SELECTOR_AVAILABLE = True
+except ImportError:
+    AI_SELECTOR_AVAILABLE = False
+    print("⚠️ AI Universe Selector not available - running with full fixed universe")
+
 # AI Market & Pick Validator (NEW)
 try:
     from ai_market_validator import AIMarketValidator
@@ -61,6 +69,22 @@ try:
 except ImportError:
     MARKET_TIMING_AVAILABLE = False
     print("⚠️ Market Timing Signal not available - running without market timing")
+
+# Market Day Advisor (NEW - Phase 2)
+try:
+    from market_day_advisor import MarketDayAdvisor
+    MARKET_DAY_ADVISOR_AVAILABLE = True
+except ImportError:
+    MARKET_DAY_ADVISOR_AVAILABLE = False
+    print("⚠️ Market Day Advisor not available - running without skip warnings")
+
+# Short-Term Momentum Scanner (NEW - Phase 2)
+try:
+    from short_term_momentum import ShortTermMomentum
+    SHORT_TERM_MOMENTUM_AVAILABLE = True
+except ImportError:
+    SHORT_TERM_MOMENTUM_AVAILABLE = False
+    print("⚠️ Short-Term Momentum Scanner not available - running without swing trade detection")
 
 
 class FixedUltimateStrategyAnalyzer:
@@ -105,6 +129,16 @@ class FixedUltimateStrategyAnalyzer:
                 print("⚠️ Real ML models not found - ML will remain disabled until trained on REAL data")
                 self.needs_real_training = True
         
+        # Initialize AI Universe Selector (NEW Phase 1)
+        self.ai_selector = None
+        if AI_SELECTOR_AVAILABLE:
+            print("🌍 Initializing AI Universe Selector...")
+            self.ai_selector = AIUniverseSelector()
+            if self.ai_selector.enabled:
+                print("✅ AI Universe Selection enabled - will pre-scan market for best sectors")
+            else:
+                print("⚠️ AI Universe Selection disabled - Grok API key not found")
+
         # Initialize AI Market & Pick Validator (NEW)
         self.ai_validator = None
         if AI_VALIDATOR_AVAILABLE:
@@ -141,6 +175,18 @@ class FixedUltimateStrategyAnalyzer:
             self.market_timing = MarketTimingSignal()
             print("📊 Market Timing Signal enabled - will provide clear BUY/WAIT/SELL signals")
         
+        # Initialize Market Day Advisor (NEW - Phase 2)
+        self.market_day_advisor = None
+        if MARKET_DAY_ADVISOR_AVAILABLE:
+            self.market_day_advisor = MarketDayAdvisor()
+            print("🚦 Market Day Advisor enabled - will provide Skip Today warnings")
+        
+        # Initialize Short-Term Momentum Scanner (NEW - Phase 2)
+        self.momentum_scanner = None
+        if SHORT_TERM_MOMENTUM_AVAILABLE:
+            self.momentum_scanner = ShortTermMomentum()
+            print("📈 Short-Term Momentum Scanner enabled - swing trade detection active")
+        
         # Guardrails DISABLED - Premium universe pre-screened
         self.guard_enabled = False
         
@@ -172,11 +218,33 @@ class FixedUltimateStrategyAnalyzer:
         if progress_callback:
             progress_callback("Starting Premium Ultimate Strategy...", 0)
         
-        # STEP 1: Get universe
-        if progress_callback:
-            progress_callback("Loading premium stock universe...", 5)
+        # STEP 1: Smart Universe Selection (AI Phase 1)
+        full_universe = []
+        ai_market_reasoning = ""
+        ai_focus_sectors = []
         
-        full_universe = self.analyzer._get_expanded_stock_universe()
+        if self.ai_selector and self.ai_selector.enabled:
+            if progress_callback:
+                progress_callback("🤖 AI performing global market scan...", 2)
+            
+            try:
+                # Target ~150 best stocks for the current market condition
+                selection_result = self.ai_selector.select_universe(target_size=150)
+                full_universe = selection_result.get('universe', [])
+                ai_market_reasoning = selection_result.get('reasoning', '')
+                ai_focus_sectors = selection_result.get('focus_sectors', [])
+                
+                print(f"✅ AI Universe Selection: Using {len(full_universe)} stocks")
+                print(f"   Reasoning: {ai_market_reasoning}")
+                
+            except Exception as e:
+                print(f"⚠️ AI Universe Selection failed: {e}. Falling back to full list.")
+                full_universe = self.analyzer._get_expanded_stock_universe()
+        else:
+            if progress_callback:
+                progress_callback("Loading premium stock universe...", 5)
+            full_universe = self.analyzer._get_expanded_stock_universe()
+            
         full_universe, self._denylist_excluded = self._apply_symbol_denylist(full_universe)
         
         total_stocks = len(full_universe)
@@ -202,6 +270,11 @@ class FixedUltimateStrategyAnalyzer:
         
         market_analysis = self._analyze_market_conditions()
         
+        # Inject AI Phase 1 Context
+        if ai_market_reasoning:
+            market_analysis['ai_phase1_reasoning'] = ai_market_reasoning
+            market_analysis['ai_focus_sectors'] = ai_focus_sectors
+        
         # STEP 2.25: MARKET TIMING SIGNAL (NEW - Critical for actionable decisions)
         market_timing_signal = None
         if self.market_timing:
@@ -216,6 +289,25 @@ class FixedUltimateStrategyAnalyzer:
             # Store for later use
             market_analysis['timing_signal'] = market_timing_signal
             
+        # STEP 2.3: MARKET DAY ADVISOR (NEW - Phase 2 - Skip Today Warnings)
+        self.market_day_assessment = None
+        if self.market_day_advisor:
+            if progress_callback:
+                progress_callback("Generating trading day assessment...", 12)
+            
+            self.market_day_assessment = self.market_day_advisor.analyze_trading_conditions(market_analysis)
+            
+            # Display Market Day Assessment prominently
+            print(self.market_day_advisor.format_for_display(self.market_day_assessment))
+            
+            # Store in market_analysis for Excel/UI
+            market_analysis['day_assessment'] = self.market_day_assessment
+            
+            # If SKIP is recommended, still continue but flag it
+            if self.market_day_assessment.get('skip_today'):
+                print("\n" + "⚠️ " * 20)
+                print("🔴 SKIP TODAY RECOMMENDED - Consider waiting for better conditions!")
+                print("⚠️ " * 20 + "\n")
 
         
         # STEP 2.5: AI Market Tradability Check (NEW)
@@ -308,7 +400,12 @@ class FixedUltimateStrategyAnalyzer:
             # Get top tier picks for validation
             top_picks = [p for p in consensus_picks if p['strategies_agreeing'] >= 3][:10]
             
-            pick_validation = self.ai_validator.validate_picks(top_picks, market_analysis)
+            # Create context object from Phase 1 data (injected into market_analysis earlier)
+            ai_phase1_ctx = {
+                'ai_market_reasoning': market_analysis.get('ai_phase1_reasoning'),
+                'ai_focus_sectors': market_analysis.get('ai_focus_sectors')
+            }
+            pick_validation = self.ai_validator.validate_picks(top_picks, market_analysis, ai_phase1_ctx)
             
             print(f"Overall AI Validation: {pick_validation.get('overall_validation', 'UNKNOWN')}")
             print(f"Summary: {pick_validation.get('summary', 'N/A')}")
@@ -425,12 +522,18 @@ class FixedUltimateStrategyAnalyzer:
         )
         
         # STEP 9: Auto-export if requested
-        if auto_export and consensus_picks:
-            try:
-                from excel_export import export_analysis_to_excel
-                self._export_results(consensus_picks, final_results)
-            except Exception as e:
-                print(f"⚠️ Excel export failed: {e}")
+        if auto_export:
+            if consensus_picks:
+                try:
+                    print(f"\n📊 Exporting {len(consensus_picks)} consensus picks to Excel...")
+                    from excel_export import export_analysis_to_excel
+                    self._export_results(consensus_picks, final_results)
+                except Exception as e:
+                    print(f"⚠️ Excel export failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("⚠️ No consensus picks to export - check if analysis found any 2+ agreement stocks")
         
         if progress_callback:
             progress_callback("Analysis complete!", 100)
@@ -1845,6 +1948,18 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             # Extract market timing signal from results
             market_timing_signal = results.get('market_analysis', {}).get('timing_signal')
             
+            # Extract AI Universe Context (NEW)
+            ai_universe_context = None
+            market_analysis = results.get('market_analysis', {})
+            if market_analysis.get('ai_phase1_reasoning'):
+                ai_universe_context = {
+                    'reasoning': market_analysis.get('ai_phase1_reasoning', ''),
+                    'focus_sectors': market_analysis.get('ai_focus_sectors', [])
+                }
+            
+            # Extract Day Assessment (NEW - Phase 2)
+            day_assessment = market_analysis.get('day_assessment')
+            
             # Export with BOTH datasets + AI validation + market timing + timing data
             filename, msg = export_analysis_to_excel(
                 consensus_export,  # Consensus picks for main tabs
@@ -1852,10 +1967,12 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                 analysis_params=f'Premium Ultimate Strategy - {len(all_analyzed)} stocks analyzed, {len(consensus)} consensus picks',
                 market_tradability=results.get('market_tradability'),  # AI market validation
                 market_timing_signal=market_timing_signal,  # Market timing signal
-                ai_top_picks=results.get('ai_top_picks'),  # AI-selected best opportunities
+                ai_universe_context=ai_universe_context, # AI Phase 1 Context
+                ai_top_picks=results.get('ai_top_picks'), # AI Top Picks
                 analysis_start_time=results.get('analysis_start_time'),
                 analysis_end_time=results.get('analysis_end_time'),
-                analysis_duration_minutes=results.get('analysis_duration_minutes')
+                analysis_duration_minutes=results.get('analysis_duration_minutes'),
+                day_assessment=day_assessment  # NEW: Trading Day Assessment
             )
             
             if filename:
