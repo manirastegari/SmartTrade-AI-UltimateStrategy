@@ -199,11 +199,12 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 5-Perspective Consen
     **🏆 Ultimate Strategy + AI (True Consensus + AI Review):**
     
     All 5 perspectives analyze THE SAME premium stock universe:
-    1. Institutional Consensus (stability focus)
-    2. Hedge Fund Alpha (momentum focus)
-    3. Quant Value Hunter (value focus)
-    4. Risk-Managed Core (safety focus)
-    5. Investment Bank (analyst/sentiment proxy)
+    1. **AI Global Market Scan (NEW):** Determines best sectors/focus area
+    2. Institutional Consensus (stability focus)
+    3. Hedge Fund Alpha (momentum focus)
+    4. Quant Value Hunter (value focus)
+    5. Risk-Managed Core (safety focus)
+    6. Investment Bank (analyst/sentiment proxy)
     
     **Logic:** Finds stocks where MULTIPLE strategies agree
     - 5/5 agree = ULTIMATE BUY (highest conviction)
@@ -211,7 +212,7 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 5-Perspective Consen
     - 3/5 agree = BUY (strong majority)
     - 2/5 agree = WEAK BUY (lower conviction)
     
-    **Premium Universe:** 614 institutional-grade stocks
+    **Premium Universe:** Dynamic AI Selection from 614 institutional-grade stocks
     - Market cap >$2B, 5+ year track records
     - Pre-screened for quality and liquidity
     - Guardrails DISABLED (stocks pre-vetted)
@@ -219,7 +220,7 @@ if analysis_type == "🏆 Ultimate Strategy + AI (Automated 5-Perspective Consen
     
     **Output:** True consensus picks with detailed agreement metrics + AI market/stock review
     
-    **Time:** 60-90 minutes
+    **Time:** 60-90 minutes (Deep Analysis)
     **Expected Return:** 26-47% annually (lower risk)
     """)
 
@@ -643,6 +644,66 @@ if should_run_analysis:
         # Clear progress UI after analysis completes
         progress_bar.empty()
         status_text.empty()
+
+        # === SKIP TODAY WARNING BANNER (NEW - Phase 2) ===
+        # Display prominently at the top before any other results
+        if hasattr(ultimate_analyzer, 'market_day_assessment') and ultimate_analyzer.market_day_assessment:
+            assessment = ultimate_analyzer.market_day_assessment
+            warning_level = assessment.get('warning_level', 'GREEN')
+            
+            if warning_level == 'RED':
+                # Bold red warning for SKIP days
+                st.error(f"""
+                🔴 **SKIP TODAY - Market Conditions Unfavorable**
+                
+                **Confidence:** {assessment.get('confidence', 0):.0f}%
+                
+                **Honest Assessment:** {assessment.get('honest_assessment', 'N/A')}
+                
+                **Recommendation:** {assessment.get('position_sizing', 'Wait for better conditions')}
+                
+                **Next Check:** {assessment.get('next_check', 'Tomorrow')}
+                """)
+            elif warning_level == 'YELLOW':
+                # Yellow caution warning
+                st.warning(f"""
+                🟡 **CAUTION - Proceed with Reduced Exposure**
+                
+                **Confidence:** {assessment.get('confidence', 0):.0f}%
+                
+                **Honest Assessment:** {assessment.get('honest_assessment', 'N/A')}
+                
+                **Recommendation:** {assessment.get('position_sizing', 'Half positions')}
+                
+                **Strategy Focus:** {assessment.get('strategy_focus', 'Defensive only')}
+                """)
+            else:
+                # Green success for favorable days
+                st.success(f"""
+                🟢 **FAVORABLE - Good Conditions for Trading**
+                
+                **Confidence:** {assessment.get('confidence', 0):.0f}%
+                
+                **Honest Assessment:** {assessment.get('honest_assessment', 'N/A')}
+                
+                **Recommendation:** {assessment.get('position_sizing', 'Standard positions')}
+                
+                **Strategy Focus:** {assessment.get('strategy_focus', 'Balanced')}
+                """)
+            
+            # Show detailed signals in expander
+            with st.expander("📊 View Detailed Market Signals"):
+                for reason in assessment.get('reasons', []):
+                    st.markdown(f"• {reason}")
+                    
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("VIX", assessment.get('vix', 'N/A'))
+                with col2:
+                    spy_ret = assessment.get('spy_return', 0)
+                    st.metric("SPY Return", f"{spy_ret*100:+.2f}%" if spy_ret else "N/A")
+                with col3:
+                    st.metric("Regime", assessment.get('regime', 'Unknown').title())
 
         # Display results
         ultimate_analyzer.display_ultimate_strategy_results(final_recommendations)

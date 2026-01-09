@@ -89,7 +89,7 @@ Respond as JSON with keys: trade_recommendation, confidence, brief_summary, reas
             print(f"⚠️ AI market validation failed: {e}")
             return self._default_market_analysis()
     
-    def validate_picks(self, picks: List[Dict], market_context: Dict) -> Dict:
+    def validate_picks(self, picks: List[Dict], market_context: Dict, ai_phase1_context: Dict = None) -> Dict:
         """
         Ask Grok: Are these quant picks valid? Low risk? High profit potential?
         
@@ -134,13 +134,21 @@ Respond as JSON with keys: trade_recommendation, confidence, brief_summary, reas
                 for i, p in enumerate(picks[:10])  # Top 10 picks
             ])
             
+            phase1_text = ""
+            if ai_phase1_context:
+                phase1_text = f"""
+**Phase 1 AI Global Scan Context:**
+- Identified Strategy: {ai_phase1_context.get('ai_market_reasoning', 'N/A')[:200]}...
+- Focus Sectors: {', '.join(ai_phase1_context.get('ai_focus_sectors', []))}
+"""
+            
             prompt = f"""You are an expert stock analyst. You do NOT have guaranteed access to real-time news or social media.
 
 **Market Context:**
 - VIX: {market_context.get('vix', 'N/A')}
 - Regime: {market_context.get('regime', 'Unknown')}
 - Date: {datetime.now().strftime('%Y-%m-%d')}
-
+{phase1_text}
 **Quant-Selected Stock Picks to Validate:**
 {picks_text}
 
