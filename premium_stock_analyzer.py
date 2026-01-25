@@ -83,7 +83,7 @@ class PremiumStockAnalyzer:
             # Calculate all 15 metrics
             fundamentals = self._calculate_fundamentals(info, hist_data)
             momentum = self._calculate_momentum(hist_data, symbol)
-            risk = self._calculate_risk(hist_data, info)
+            risk = self._calculate_risk(hist_data, info, momentum_score=momentum.get('score', 0))
             technical = self._calculate_technical(hist_data)
             # Use latest close as definitive price reference
             current_price = float(hist_data['Close'].iloc[-1]) if not hist_data.empty else info.get('currentPrice', 0)
@@ -428,10 +428,10 @@ class PremiumStockAnalyzer:
         
         return momentum
     
-    def _calculate_risk(self, hist: pd.DataFrame, info: Dict) -> Dict:
+    def _calculate_risk(self, hist: pd.DataFrame, info: Dict, momentum_score: float = 0) -> Dict:
         """
         Calculate 3 risk metrics (20% weight)
-        1. Beta (market volatility)
+        1. Beta (market volatility) - WITH MOMENTUM FORGIVENESS
         2. Max Drawdown (downside risk)
         3. Sharpe Ratio (risk-adjusted returns)
         """
@@ -439,6 +439,7 @@ class PremiumStockAnalyzer:
         scores = []
         
         # 1. Beta - lower is better for low-risk stocks
+        # BUT: For high momentum stocks, we forgive high beta (it means upside volatility)
         beta = info.get('beta', 1.0)
         if beta is not None:
             if beta <= 0.8:
@@ -450,7 +451,12 @@ class PremiumStockAnalyzer:
             elif beta <= 1.5:
                 beta_score = 50
             else:
-                beta_score = 30  # High volatility
+                # High Beta zone (> 1.5)
+                # Beta Forgiveness: If momentum is elite, high beta is good!
+                if momentum_score >= 80:
+                    beta_score = 65  # Forgiven: reduced penalty
+                else:
+                    beta_score = 30  # High volatility penalty
         else:
             beta = 1.0
             beta_score = 70

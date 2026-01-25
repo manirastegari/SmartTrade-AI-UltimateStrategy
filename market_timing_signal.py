@@ -62,7 +62,7 @@ class MarketTimingSignal:
             vix = None
             
         # Analyze each component
-        vix_score, vix_signal = self._analyze_vix(vix)
+        vix_score, vix_signal = self._analyze_vix(vix, trend)
         trend_score, trend_signal = self._analyze_trend(spy_return, trend)
         regime_score, regime_signal = self._analyze_regime(regime)
         vol_score, vol_signal = self._analyze_volatility(spy_vol)
@@ -105,25 +105,39 @@ class MarketTimingSignal:
             }
         }
     
-    def _analyze_vix(self, vix: Optional[float]) -> Tuple[float, str]:
-        """Analyze VIX level and return score (0-100) and signal"""
+    def _analyze_vix(self, vix: Optional[float], trend: str = 'neutral') -> Tuple[float, str]:
+        """
+        Analyze VIX level and return score (0-100) and signal.
+        NOW TREND AWARE: Tolerates higher VIX if trend is UP (Volatile Bull).
+        """
         if vix is None:
             return 50, "VIX Unavailable - Neutral"
             
+        # Volatile Bull Adjustment: simpler thresholds if Trend is UP
+        is_bull_trend = trend in ('up', 'strong_up')
+        
         if vix < 12:
             return 100, "Extremely calm (VIX < 12) - Complacent"
         elif vix < 15:
             return 95, "Very calm (VIX 12-15) - Excellent entry"
         elif vix < 20:
             return 85, "Calm (VIX 15-20) - Good conditions"
-        elif vix < 25:
-            return 60, "Elevated (VIX 20-25) - Cautious"
-        elif vix < 30:
-            return 40, "High (VIX 25-30) - Wait for clarity"
-        elif vix < 40:
-            return 20, "Very high (VIX 30-40) - Crisis building"
+        elif vix < 24:
+            # Bull market tolerance extension
+            if is_bull_trend:
+                return 75, "Elevated (VIX 20-24) - Volatile Bull"
+            else:
+                return 60, "Elevated (VIX 20-24) - Cautious"
+        elif vix < 28:
+            # High volatility zone
+            if is_bull_trend:
+                return 65, "High Vol (VIX 24-28) - Trend defies Fear"
+            else:
+                return 40, "High (VIX 24-30) - Wait for clarity"
+        elif vix < 35:
+            return 20, "Very high (VIX > 30) - Crisis building"
         else:
-            return 5, "Extreme (VIX > 40) - Crisis mode"
+            return 5, "Extreme (VIX > 35) - Crisis mode"
     
     def _analyze_trend(self, spy_return: Optional[float], trend: str) -> Tuple[float, str]:
         """Analyze market trend and return score"""

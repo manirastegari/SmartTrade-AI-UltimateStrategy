@@ -773,8 +773,17 @@ class FixedUltimateStrategyAnalyzer:
 
             # Regime modifiers
             mode = self.global_trading_mode or 'NORMAL'
+            momentum_score = float(pick.get('momentum', {}).get('score', 0) or 0)
+            
+            # SMART AGGRESSION: Momentum Leader Check
+            # If momentum is elite (>90), we ignore Defensive mode penalties
+            is_momentum_leader = momentum_score >= 90
+            
             if mode == 'DEFENSIVE':
-                base -= 15
+                if is_momentum_leader:
+                    base += 5  # Bonus for relative strength
+                else:
+                    base -= 15 # Standard penalty for defensive mode
             elif mode == 'NO_NEW_TRADES':
                 base -= 40
             elif mode == 'AGGRESSIVE':
