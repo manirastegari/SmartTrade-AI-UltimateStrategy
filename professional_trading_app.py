@@ -698,7 +698,7 @@ if should_run_analysis:
                     
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("VIX", assessment.get('vix', 'N/A'))
+                    st.metric("VIX", assessment.get('vix_level', 'N/A'))
                 with col2:
                     spy_ret = assessment.get('spy_return', 0)
                     st.metric("SPY Return", f"{spy_ret*100:+.2f}%" if spy_ret else "N/A")
