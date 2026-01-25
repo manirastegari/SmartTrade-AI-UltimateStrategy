@@ -34,7 +34,7 @@ MODEL_FALLBACKS = {
 class XAIClient:
 	"""Thin client for xAI Grok chat completions."""
 
-	def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, timeout: int = 60):
+	def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, timeout: int = 300):
 		# Best-effort: load .env if python-dotenv is available (dev convenience, safe for public repos)
 		try:
 			from dotenv import load_dotenv  # type: ignore
@@ -98,36 +98,56 @@ class XAIClient:
 			"response_format": {"type": "json_object"},
 		}
 
-		try:
-			print(f"[XAIClient] Requesting model: {self.model} (fallback: {self.fallback_model})")
-			resp = requests.post(url, headers=self._headers(), json=payload, timeout=self.timeout)
-			resp.raise_for_status()
-		except requests.HTTPError as e:
-			# Graceful fallback: if the selected model is unavailable, try a compatible cheaper/fast variant
+		# RETRY LOGIC (3 attempts)
+		max_retries = 3
+		for attempt in range(max_retries):
 			try:
-				status = e.response.status_code if e.response is not None else None
-				body = e.response.text if e.response is not None else ""
-			except Exception:
-				status, body = None, ""
-			fallback_candidate = self.fallback_model
-			if fallback_candidate and fallback_candidate != self.model:
-				body_lower = body.lower() if isinstance(body, str) else ""
-				if status in (400, 404, 422) or "model" in body_lower:
-					payload_alt = dict(payload)
-					payload_alt["model"] = fallback_candidate
-					alt = requests.post(url, headers=self._headers(), json=payload_alt, timeout=self.timeout)
-					alt.raise_for_status()
-					data = alt.json()
-					try:
-						content = data["choices"][0]["message"]["content"]
-					except Exception:
-						content = json.dumps(data)
-					out = self._safe_json(content)
-					# annotate chosen model
-					print(f"[XAIClient] Fallback successful → {fallback_candidate}")
-					out["model_used"] = fallback_candidate
-					return out
-			raise
+				print(f"[XAIClient] Requesting model: {self.model} (fallback: {self.fallback_model}) - Attempt {attempt+1}/{max_retries}")
+				resp = requests.post(url, headers=self._headers(), json=payload, timeout=self.timeout)
+				resp.raise_for_status()
+				break # Success
+			except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+				print(f"⚠️ xAI request failed (Attempt {attempt+1}): {e}")
+				if attempt < max_retries - 1:
+					wait_time = (attempt + 1) * 2
+					print(f"   Using retry logic... waiting {wait_time}s")
+					time.sleep(wait_time)
+				else:
+					if isinstance(e, requests.exceptions.ReadTimeout):
+						print("❌ Final ReadTimeout: It seems the model is taking too long.")
+					# Raise the error if it's the last attempt
+					raise e
+			except requests.HTTPError as e:
+				# Graceful fallback: if the selected model is unavailable, try a compatible cheaper/fast variant
+				try:
+					status = e.response.status_code if e.response is not None else None
+					body = e.response.text if e.response is not None else ""
+				except Exception:
+					status, body = None, ""
+				fallback_candidate = self.fallback_model
+				if fallback_candidate and fallback_candidate != self.model:
+					body_lower = body.lower() if isinstance(body, str) else ""
+					if status in (400, 404, 422) or "model" in body_lower:
+						try:
+							print(f"⚠️ Primary model issue ({status}). Switching to fallback: {fallback_candidate}")
+							payload_alt = dict(payload)
+							payload_alt["model"] = fallback_candidate
+							alt = requests.post(url, headers=self._headers(), json=payload_alt, timeout=self.timeout)
+							alt.raise_for_status()
+							data = alt.json()
+							try:
+								content = data["choices"][0]["message"]["content"]
+							except Exception:
+								content = json.dumps(data)
+							out = self._safe_json(content)
+							# annotate chosen model
+							print(f"[XAIClient] Fallback successful → {fallback_candidate}")
+							out["model_used"] = fallback_candidate
+							return out
+						except Exception as fb_err:
+							print(f"❌ Fallback also failed: {fb_err}")
+							raise e
+				raise
 
 		data = resp.json()
 		try:

@@ -30,7 +30,7 @@ def get_cleaned_high_potential_universe():
         normalized_universe = _normalize_universe_symbols(raw_universe)
         baseline_count = len(normalized_universe)
         aligned_universe = _ensure_tfsa_questrade_alignment(normalized_universe)
-        target_min = max(baseline_count, 680)
+        target_min = max(baseline_count, 600)
         final_universe = sanitize_runtime_universe(aligned_universe, target_min=target_min)
         print(f"✅ Loaded Premium Quality universe: {len(final_universe)} TFSA-ready stocks (low-risk, steady-growth)")
         return final_universe
@@ -233,7 +233,7 @@ def _build_tfsa_replacement_map():
     return mapping
 
 
-def sanitize_runtime_universe(universe, failed_symbols=None, target_min=680):
+def sanitize_runtime_universe(universe, failed_symbols=None, target_min=600):
     """At runtime, drop symbols that failed across all sources and backfill from a reserve pool."""
     failed_set = set([s.strip().upper() for s in (failed_symbols or []) if isinstance(s, str)])
     filtered = [s for s in universe if s.upper() not in failed_set]

@@ -33,8 +33,8 @@ PREMIUM_QUALITY_UNIVERSE = {
         'ADI', 'KLAC', 'MU', 'MCHP', 'NXPI', 'MRVL',
         'MPWR', 'ON', 'ENTG', 'TER', 'STX', 'WDC',
         
-        # IT Services
-        'CTSH', 'IT', 'GLW', 'HPQ'
+        # IT Services & Equipment
+        'CTSH', 'IT', 'GLW', 'HPQ', 'MSI', 'CHKP'
     ],
     
     # ========================================================================
@@ -105,12 +105,13 @@ PREMIUM_QUALITY_UNIVERSE = {
         # Food & Beverage Giants
         'KO', 'PEP', 'PG', 'MDLZ', 'KHC', 'GIS', 'K', 'CPB',
         'SJM', 'CAG', 'MKC', 'CHD', 'CLX', 'HSY', 'TSN', 'HRL',
+        'MNST', 'KDP',  # Added Low-Vol Beverages
         
         # Personal Care & Household
         'CL', 'KMB', 'EL', 'CLX', 'CHD',
         
         # Retail Staples
-        'WMT', 'COST', 'KR', 'SYY', 'TGT',
+        'WMT', 'COST', 'KR', 'SYY', 'TGT', 'BJ',
         
         # Tobacco & Alcohol (Stable)
         'PM', 'MO', 'BTI', 'STZ', 'TAP', 'BF-B',
@@ -118,8 +119,8 @@ PREMIUM_QUALITY_UNIVERSE = {
         # Consumer Products
         'COTY', 'EPC', 'IPAR', 'NWL', 'SPB', 'JBSS',
         
-        # Food Distributors
-        'USFD', 'PFGC', 'CHEF', 'UNFI'  # Replaced 'USF D' with 'USFD'
+        # Food Distributors & Ingredients
+        'USFD', 'PFGC', 'CHEF', 'UNFI', 'INGR'  # Replaced 'USF D' with 'USFD'
     ],
     
     # ========================================================================
@@ -137,7 +138,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Apparel & Footwear - Quality
         'NKE', 'LULU', 'DECK', 'CROX', 'VFC', 'RL', 'PVH',
-        'SKX', 'ONON', 'FL', 'BOOT',
+        'SKX', 'ONON', 'FL', 'BOOT', 'COLM',
         
         # Home & Specialty Retail
         'WSM', 'RH', 'BBWI', 'TPR', 'CNK',
@@ -211,7 +212,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         'DTE', 'ETR', 'PPL', 'LNT', 'OGE', 'NWE',
         
         # Water Utilities
-        'AWK', 'AWR', 'CWT', 'YORW', 'MSEX',  # Replaced SJW with YORW (York Water)
+        'AWK', 'AWR', 'CWT', 'YORW', 'MSEX', 'WTRG',  # Replaced SJW with YORW (York Water)
         
         # Gas Utilities
         'ATO', 'SR', 'NJR', 'NFG', 'SWX'

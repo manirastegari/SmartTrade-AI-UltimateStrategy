@@ -11,6 +11,33 @@ import os
 import subprocess
 from openpyxl.utils import get_column_letter
 
+def _clean_val(val, max_len=30000):
+    """Aggressive sanitization for Excel export."""
+    if pd.isna(val) or val is None:
+        return ""
+    
+    # Preserve numbers
+    if isinstance(val, (int, float)):
+        return val
+        
+    val = str(val)
+    
+    # Prevent formula injection
+    if val.startswith("="):
+        val = "'" + val
+        
+    # Whitelist: Allow only standard printable characters (ASCII + common symbols)
+    # This strips complex Unicode that Excel might hate (emojis, control chars, etc.)
+    import re
+    # Keep alphanumeric, punctuation, and common whitespace (space)
+    # Strip everything else to be 100% safe
+    val = re.sub(r'[^\x20-\x7E]', '', val) 
+    
+    if len(val) > max_len:
+        val = val[:max_len] + "..."
+        
+    return val
+
 def push_to_github(filename):
     """
     Automatically commit and push Excel results to GitHub
@@ -83,7 +110,15 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             
             # Sheet 1: Summary Dashboard
-            create_summary_sheet(
+            # Safe sheet creation wrapper
+            def safe_create(func, *args, **kwargs):
+                try:
+                    func(*args, **kwargs)
+                except Exception as e:
+                    print(f"⚠️ Error creating sheet: {str(e)}")
+
+            # Sheet 1: Summary Dashboard
+            safe_create(create_summary_sheet,
                 results,
                 writer,
                 analysis_params,
@@ -94,40 +129,41 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
                 analysis_start_time=analysis_start_time,
                 analysis_end_time=analysis_end_time,
                 analysis_duration_minutes=analysis_duration_minutes,
-                day_assessment=day_assessment
+                day_assessment=day_assessment,
+                ai_universe_context=ai_universe_context
             )
             
-            # Sheet 2: ALL ANALYZED STOCKS (NEW - Critical for user visibility)
+            # Sheet 2: ALL ANALYZED STOCKS
             if all_stocks_data:
-                create_all_analyzed_sheet(all_stocks_data, writer)
+                safe_create(create_all_analyzed_sheet, all_stocks_data, writer)
 
-            # Sheet 3: AI Top Picks (NEW - direct view of xAI selection)
+            # Sheet 3: AI Top Picks
             if ai_top_picks:
-                create_ai_top_picks_sheet(ai_top_picks, writer)
+                safe_create(create_ai_top_picks_sheet, ai_top_picks, writer)
             
-            # Sheet 4: Ultimate Buy Recommendations (consensus picks)
-            create_recommendations_sheet(results, writer, 'ULTIMATE BUY', 'Ultimate_Buy')
+            # Sheet 4: Ultimate Buy
+            safe_create(create_recommendations_sheet, results, writer, 'ULTIMATE BUY', 'Ultimate_Buy')
 
-            # Sheet 5: Strong Buy Recommendations (consensus picks)
-            create_recommendations_sheet(results, writer, 'STRONG BUY')
+            # Sheet 5: Strong Buy
+            safe_create(create_recommendations_sheet, results, writer, 'STRONG BUY')
             
-            # Sheet 6: All Buy Signals (consensus picks)
-            create_recommendations_sheet(results, writer, ['ULTIMATE BUY', 'STRONG BUY', 'BUY', 'WEAK BUY'], 'All_Buy_Signals')
+            # Sheet 6: All Buy Signals
+            safe_create(create_recommendations_sheet, results, writer, ['ULTIMATE BUY', 'STRONG BUY', 'BUY', 'WEAK BUY'], 'All_Buy_Signals')
             
-            # Sheet 7: Detailed Analysis (consensus picks)
-            create_detailed_analysis_sheet(results, writer)
+            # Sheet 7: Detailed Analysis
+            safe_create(create_detailed_analysis_sheet, results, writer)
             
-            # Sheet 8: Technical Indicators (consensus picks)
-            create_technical_sheet(results, writer)
+            # Sheet 8: Technical Indicators
+            safe_create(create_technical_sheet, results, writer)
             
-            # Sheet 9: Risk Analysis (consensus picks)
-            create_risk_analysis_sheet(results, writer)
+            # Sheet 9: Risk Analysis
+            safe_create(create_risk_analysis_sheet, results, writer)
             
-            # Sheet 10: Sector Analysis (consensus picks)
-            create_sector_analysis_sheet(results, writer)
+            # Sheet 10: Sector Analysis
+            safe_create(create_sector_analysis_sheet, results, writer)
             
-            # Sheet 11: Performance Metrics (consensus picks)
-            create_performance_sheet(results, writer)
+            # Sheet 11: Performance Metrics
+            safe_create(create_performance_sheet, results, writer)
         
         # Auto-push to GitHub if requested (ENABLED BY DEFAULT)
         env_push = os.getenv('SMARTTRADE_AUTO_PUSH', 'true').lower() in ('1', 'true', 'yes')
@@ -216,6 +252,9 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
                 'Market Regime',
                 'Reason',
                 '━━━━━━━━━━━━━━━━━━━━━━━━━━',
+                '🧠 AI REASONING TRACE',
+                'Reasoning Logic',
+                '',
                 '🤖 AI MARKET ANALYSIS',
                 'AI Trade Recommendation',
                 'AI Confidence Level',
@@ -239,56 +278,60 @@ def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None
             ],
             'Value': [
                 '',  # Section header
-                f"{'🔴 SKIP' if day_assessment and day_assessment.get('skip_today') else '🟡 CAUTION' if day_assessment and day_assessment.get('warning_level') == 'YELLOW' else '🟢 TRADE'}" if day_assessment else 'N/A',
-                'YES - Wait for better conditions' if day_assessment and day_assessment.get('skip_today') else 'NO - Conditions acceptable',
-                f"{day_assessment.get('confidence', 0):.0f}%" if day_assessment else 'N/A',
-                day_assessment.get('honest_assessment', 'Day assessment not available') if day_assessment else 'Day assessment not available',
-                day_assessment.get('position_sizing', 'N/A') if day_assessment else 'N/A',
-                day_assessment.get('strategy_focus', 'N/A') if day_assessment else 'N/A',
-                day_assessment.get('next_check', 'N/A') if day_assessment else 'N/A',
+                _clean_val(f"{'🔴 SKIP' if day_assessment and day_assessment.get('skip_today') else '🟡 CAUTION' if day_assessment and day_assessment.get('warning_level') == 'YELLOW' else '🟢 TRADE'}" if day_assessment else 'N/A'),
+                _clean_val('YES - Wait for better conditions' if day_assessment and day_assessment.get('skip_today') else 'NO - Conditions acceptable'),
+                _clean_val(f"{day_assessment.get('confidence', 0):.0f}%" if day_assessment else 'N/A'),
+                _clean_val(day_assessment.get('honest_assessment', 'Day assessment not available') if day_assessment else 'Day assessment not available'),
+                _clean_val(day_assessment.get('position_sizing', 'N/A') if day_assessment else 'N/A'),
+                _clean_val(day_assessment.get('strategy_focus', 'N/A') if day_assessment else 'N/A'),
+                _clean_val(day_assessment.get('next_check', 'N/A') if day_assessment else 'N/A'),
                 '',  # Separator
-                analysis_start_time if analysis_start_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                analysis_end_time if analysis_end_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                f"{analysis_duration_minutes} minutes" if analysis_duration_minutes else "N/A",
+                _clean_val(analysis_start_time if analysis_start_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                _clean_val(analysis_end_time if analysis_end_time else datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                _clean_val(f"{analysis_duration_minutes} minutes" if analysis_duration_minutes else "N/A"),
                 'Premium Ultimate Strategy - 5-Perspective Consensus',
-                f"Interactive AI Selection ({ai_universe_context.get('reasoning')[:50]}...)" if ai_universe_context else 'Premium Quality Universe (614 institutional-grade stocks)',
-                f"{total_analyzed_display} stocks (AI Focused)" if ai_universe_context else f"{total_analyzed_display} stocks (complete analysis)",
-                f"{consensus_picks_display} stocks (filtered by multi-strategy agreement)",
+                _clean_val(f"Interactive AI Selection ({ai_universe_context.get('reasoning')[:50]}...)" if ai_universe_context else 'Premium Quality Universe (614 institutional-grade stocks)'),
+                _clean_val(f"{total_analyzed_display} stocks (AI Focused)" if ai_universe_context else f"{total_analyzed_display} stocks (complete analysis)"),
+                _clean_val(f"{consensus_picks_display} stocks (filtered by multi-strategy agreement)"),
                 '',  # Separator
                 '',  # Section header
-                market_timing_signal.get('action', 'N/A') if market_timing_signal else 'N/A',
-                market_timing_signal.get('signal', 'N/A') if market_timing_signal else 'N/A',
-                market_timing_signal.get('position_sizing', 'N/A') if market_timing_signal else 'N/A',
-                f"{market_timing_signal.get('confidence', 0)}%" if market_timing_signal else 'N/A',
-                (f"{market_timing_signal.get('vix_level')}" if market_timing_signal and market_timing_signal.get('vix_level') is not None else 'N/A'),
-                (f"{market_timing_signal.get('spy_return_1d')}%" if market_timing_signal and market_timing_signal.get('spy_return_1d') is not None else 'N/A'),
-                market_timing_signal.get('market_regime', 'N/A') if market_timing_signal else 'N/A',
-                market_timing_signal.get('brief_reason', 'No timing signal available') if market_timing_signal else 'No timing signal available',
+                _clean_val(market_timing_signal.get('action', 'N/A') if market_timing_signal else 'N/A'),
+                _clean_val(market_timing_signal.get('signal', 'N/A') if market_timing_signal else 'N/A'),
+                _clean_val(market_timing_signal.get('position_sizing', 'N/A') if market_timing_signal else 'N/A'),
+                _clean_val(f"{market_timing_signal.get('confidence', 0)}%" if market_timing_signal else 'N/A'),
+                _clean_val((f"{market_timing_signal.get('vix_level')}" if market_timing_signal and market_timing_signal.get('vix_level') is not None else 'N/A')),
+                _clean_val((f"{market_timing_signal.get('spy_return_1d')}%" if market_timing_signal and market_timing_signal.get('spy_return_1d') is not None else 'N/A')),
+                _clean_val(market_timing_signal.get('market_regime', 'N/A') if market_timing_signal else 'N/A'),
+                _clean_val(market_timing_signal.get('brief_reason', 'No timing signal available') if market_timing_signal else 'No timing signal available'),
                 '',  # Separator
                 '',  # Section header
-                market_tradability.get('trade_recommendation', 'N/A') if market_tradability else 'N/A',
-                f"{market_tradability.get('confidence', 0):.0f}%" if market_tradability else 'N/A',
-                market_tradability.get('brief_summary', 'AI analysis not available') if market_tradability else 'AI analysis not available',
+                '🧠 AI REASONING TRACE',
+                _clean_val(ai_top_picks.get('reasoning_trace', 'N/A') if ai_top_picks else 'N/A'),
+                '',
+                '🤖 AI MARKET ANALYSIS',
+                _clean_val(market_tradability.get('trade_recommendation', 'N/A') if market_tradability else 'N/A'),
+                _clean_val(f"{market_tradability.get('confidence', 0):.0f}%" if market_tradability else 'N/A'),
+                _clean_val(market_tradability.get('brief_summary', 'AI analysis not available') if market_tradability else 'AI analysis not available'),
                 '',
                 '🌍 AI UNIVERSE SELECTION',
-                f"Strategy: {ai_universe_context.get('reasoning')}" if ai_universe_context else 'N/A',
-                f"Focus Sectors: {', '.join(ai_universe_context.get('focus_sectors', []))}" if ai_universe_context else 'N/A',
+                _clean_val(f"Strategy: {ai_universe_context.get('reasoning')}" if ai_universe_context else 'N/A'),
+                _clean_val(f"Focus Sectors: {', '.join(ai_universe_context.get('focus_sectors', []))}" if ai_universe_context else 'N/A'),
                 '',
                 '',
-                f"{ai_top_picks.get('total_recommended', 0)} of {ai_top_picks.get('total_analyzed', 0)} candidates" if ai_top_picks else 'AI selection unavailable',
-                ai_top_picks.get('key_insight', 'N/A') if ai_top_picks else 'N/A',
-                ', '.join([p.get('symbol', 'N/A') for p in ai_top_picks.get('ai_top_picks', [])[:5]]) if ai_top_picks else 'N/A',
+                _clean_val(f"{ai_top_picks.get('total_recommended', 0)} of {ai_top_picks.get('total_analyzed', 0)} candidates" if ai_top_picks else 'AI selection unavailable'),
+                _clean_val(ai_top_picks.get('key_insight', 'N/A') if ai_top_picks else 'N/A'),
+                _clean_val(', '.join([p.get('symbol', 'N/A') for p in ai_top_picks.get('ai_top_picks', [])[:5]]) if ai_top_picks else 'N/A'),
                 '',  # Separator
-                f"{tier_5} stocks (all 5 perspectives agree)",
-                f"{tier_4} stocks (4 of 5 agree)",
-                f"{tier_3} stocks (3 of 5 agree)",
-                f"{tier_2} stocks (2 of 5 agree)",
-                f"{avg_quality:.1f}/100",
-                f"{top_performer} ({max([r.get('quality_score', 0) for r in results]):.0f}/100)" if results else 'N/A',
+                _clean_val(f"{tier_5} stocks (all 5 perspectives agree)"),
+                _clean_val(f"{tier_4} stocks (4 of 5 agree)"),
+                _clean_val(f"{tier_3} stocks (3 of 5 agree)"),
+                _clean_val(f"{tier_2} stocks (2 of 5 agree)"),
+                _clean_val(f"{avg_quality:.1f}/100"),
+                _clean_val(f"{top_performer} ({max([r.get('quality_score', 0) for r in results]):.0f}/100)" if results else 'N/A'),
                 '',  # Separator
                 '15 Quality Metrics: Fundamentals 40%, Momentum 30%, Risk 20%, Sentiment 10%',
                 'Guardrails: DISABLED (pre-screened) | Regime Filters: RELAXED',
-                str(analysis_params) if analysis_params else 'Premium Ultimate Strategy - 5-Perspective Consensus'
+                _clean_val(str(analysis_params) if analysis_params else 'Premium Ultimate Strategy - 5-Perspective Consensus')
             ]
         }
     else:
@@ -374,87 +417,87 @@ def create_all_analyzed_sheet(all_stocks_data, writer):
             'ML Confidence %': round(ml_conf * 100, 1) if ml_conf is not None else None,
             
             # ENHANCED SIGNALS (NEW - 20%+ Accuracy Boost)
-            'Enhancement Score': enhanced.get('enhancement_score'),
-            'Enhancement Signal': enhanced.get('enhancement_signal', 'N/A'),
-            'Confirmations': enhanced.get('confirmation_count', 0),
+            'Enhancement Score': _clean_val(enhanced.get('enhancement_score')),
+            'Enhancement Signal': _clean_val(enhanced.get('enhancement_signal', 'N/A')),
+            'Confirmations': _clean_val(enhanced.get('confirmation_count', 0)),
             
             # VWAP Analysis
-            'VWAP': enhanced.get('vwap'),
-            'VWAP Signal': enhanced.get('vwap_signal', 'N/A'),
-            'Breakout Confirmed': 'YES' if enhanced.get('breakout_confirmed') else 'NO',
+            'VWAP': _clean_val(enhanced.get('vwap')),
+            'VWAP Signal': _clean_val(enhanced.get('vwap_signal', 'N/A')),
+            'Breakout Confirmed': _clean_val('YES' if enhanced.get('breakout_confirmed') else 'NO'),
             
             # Entry Zone (Support/Resistance)
-            'Entry Zone': enhanced.get('entry_zone', 'N/A'),
-            'Entry Score': enhanced.get('entry_score'),
-            'Entry Timing': enhanced.get('entry_timing', 'N/A'),
-            'Nearest Support': enhanced.get('nearest_support'),
-            'Nearest Resistance': enhanced.get('nearest_resistance'),
-            'Risk/Reward': enhanced.get('risk_reward_ratio'),
+            'Entry Zone': _clean_val(enhanced.get('entry_zone', 'N/A')),
+            'Entry Score': _clean_val(enhanced.get('entry_score')),
+            'Entry Timing': _clean_val(enhanced.get('entry_timing', 'N/A')),
+            'Nearest Support': _clean_val(enhanced.get('nearest_support')),
+            'Nearest Resistance': _clean_val(enhanced.get('nearest_resistance')),
+            'Risk/Reward': _clean_val(enhanced.get('risk_reward_ratio')),
             
             # Mean Reversion (RSI-2)
-            'RSI(2)': enhanced.get('rsi_2'),
-            'Reversion Signal': enhanced.get('reversion_signal', 'N/A'),
-            'Bounce Probability %': enhanced.get('bounce_probability'),
-            'Is Bounce Setup': 'YES' if enhanced.get('is_bounce_setup') else 'NO',
+            'RSI(2)': _clean_val(enhanced.get('rsi_2')),
+            'Reversion Signal': _clean_val(enhanced.get('reversion_signal', 'N/A')),
+            'Bounce Probability %': _clean_val(enhanced.get('bounce_probability')),
+            'Is Bounce Setup': _clean_val('YES' if enhanced.get('is_bounce_setup') else 'NO'),
             
             # ATR Stop Loss
-            'Recommended Stop': enhanced.get('recommended_stop'),
-            'Stop Loss %': enhanced.get('stop_loss_pct'),
-            'Target (2:1 R:R)': enhanced.get('target_2r'),
-            'Volatility Regime': enhanced.get('volatility_regime', 'N/A'),
-            'Position Size': enhanced.get('position_size_suggestion', 'N/A'),
+            'Recommended Stop': _clean_val(enhanced.get('recommended_stop')),
+            'Stop Loss %': _clean_val(enhanced.get('stop_loss_pct')),
+            'Target (2:1 R:R)': _clean_val(enhanced.get('target_2r')),
+            'Volatility Regime': _clean_val(enhanced.get('volatility_regime', 'N/A')),
+            'Position Size': _clean_val(enhanced.get('position_size_suggestion', 'N/A')),
             
             # Sector Rotation
-            'Sector Rank': enhanced.get('sector_rank'),
-            'Sector Tier': enhanced.get('sector_tier', 'N/A'),
+            'Sector Rank': _clean_val(enhanced.get('sector_rank')),
+            'Sector Tier': _clean_val(enhanced.get('sector_tier', 'N/A')),
             
             # Fundamentals
-            'P/E Ratio': stock.get('pe_ratio'),
-            'Revenue Growth %': stock.get('revenue_growth'),
-            'Profit Margin %': stock.get('profit_margin'),
-            'ROE %': stock.get('roe'),
-            'Debt/Equity': stock.get('debt_equity'),
-            'Fund Score': stock.get('fundamentals_score'),
-            'Fund Grade': stock.get('fundamentals_grade', 'N/A'),
+            'P/E Ratio': _clean_val(stock.get('pe_ratio')),
+            'Revenue Growth %': _clean_val(stock.get('revenue_growth')),
+            'Profit Margin %': _clean_val(stock.get('profit_margin')),
+            'ROE %': _clean_val(stock.get('roe')),
+            'Debt/Equity': _clean_val(stock.get('debt_equity')),
+            'Fund Score': _clean_val(stock.get('fundamentals_score')),
+            'Fund Grade': _clean_val(stock.get('fundamentals_grade', 'N/A')),
             
             # Momentum
-            'RSI': stock.get('rsi_14'),
-            'Price Trend': stock.get('price_trend', 'N/A'),
-            'Volume Trend': stock.get('volume_trend', 'N/A'),
-            'Momentum Score': stock.get('momentum_score'),
-            'Momentum Grade': stock.get('momentum_grade', 'N/A'),
-            'MA 50': stock.get('ma_50'),
-            'MA 200': stock.get('ma_200'),
-            'Volume Ratio': stock.get('volume_ratio'),
+            'RSI': _clean_val(stock.get('rsi_14')),
+            'Price Trend': _clean_val(stock.get('price_trend', 'N/A')),
+            'Volume Trend': _clean_val(stock.get('volume_trend', 'N/A')),
+            'Momentum Score': _clean_val(stock.get('momentum_score')),
+            'Momentum Grade': _clean_val(stock.get('momentum_grade', 'N/A')),
+            'MA 50': _clean_val(stock.get('ma_50')),
+            'MA 200': _clean_val(stock.get('ma_200')),
+            'Volume Ratio': _clean_val(stock.get('volume_ratio')),
             
             # Risk
-            'Beta': stock.get('beta'),
-            'Volatility %': stock.get('volatility'),
-            'Sharpe Ratio': stock.get('sharpe_ratio'),
-            'Max Drawdown %': stock.get('max_drawdown'),
-            'VaR 95%': stock.get('var_95'),
-            'Risk Score': stock.get('risk_score'),
-            'Risk Grade': stock.get('risk_grade', 'N/A'),
-            'Risk Level': stock.get('risk_level', 'N/A'),
+            'Beta': _clean_val(stock.get('beta')),
+            'Volatility %': _clean_val(stock.get('volatility')),
+            'Sharpe Ratio': _clean_val(stock.get('sharpe_ratio')),
+            'Max Drawdown %': _clean_val(stock.get('max_drawdown')),
+            'VaR 95%': _clean_val(stock.get('var_95')),
+            'Risk Score': _clean_val(stock.get('risk_score')),
+            'Risk Grade': _clean_val(stock.get('risk_grade', 'N/A')),
+            'Risk Level': _clean_val(stock.get('risk_level', 'N/A')),
             
             # Technical
-            'MACD': stock.get('macd'),
-            'MACD Signal': stock.get('macd_signal'),
-            'MACD Histogram': stock.get('macd_hist'),
-            'Bollinger Position %': stock.get('bollinger_position'),
-            'Bollinger Upper': stock.get('bollinger_upper'),
-            'Bollinger Lower': stock.get('bollinger_lower'),
-            'Support Level': stock.get('support_level'),
-            'Resistance Level': stock.get('resistance_level'),
-            'Volume SMA': stock.get('volume_sma'),
-            'Technical Score': stock.get('technical_score'),
+            'MACD': _clean_val(stock.get('macd')),
+            'MACD Signal': _clean_val(stock.get('macd_signal')),
+            'MACD Histogram': _clean_val(stock.get('macd_hist')),
+            'Bollinger Position %': _clean_val(stock.get('bollinger_position')),
+            'Bollinger Upper': _clean_val(stock.get('bollinger_upper')),
+            'Bollinger Lower': _clean_val(stock.get('bollinger_lower')),
+            'Support Level': _clean_val(stock.get('support_level')),
+            'Resistance Level': _clean_val(stock.get('resistance_level')),
+            'Volume SMA': _clean_val(stock.get('volume_sma')),
+            'Technical Score': _clean_val(stock.get('technical_score')),
             
             # Sentiment
-            'Sentiment Score': stock.get('sentiment_score'),
-            'Sentiment Grade': stock.get('sentiment_grade', 'N/A'),
-            'Target Upside %': stock.get('target_upside'),
-            'Institutional Ownership %': stock.get('institutional_ownership'),
-            'Analyst Rating': stock.get('analyst_rating', 'N/A')
+            'Sentiment Score': _clean_val(stock.get('sentiment_score')),
+            'Sentiment Grade': _clean_val(stock.get('sentiment_grade', 'N/A')),
+            'Target Upside %': _clean_val(stock.get('target_upside')),
+            'Institutional Ownership %': _clean_val(stock.get('institutional_ownership')),
+            'Analyst Rating': _clean_val(stock.get('analyst_rating', 'N/A'))
         })
     
     # Create DataFrame
@@ -510,10 +553,10 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
             'Total Recommended'
         ],
         'Value': [
-            ai_top_picks.get('brief_summary', 'No AI summary available'),
-            ai_top_picks.get('key_insight', 'N/A'),
-            ai_top_picks.get('total_analyzed', 0),
-            ai_top_picks.get('total_recommended', 0)
+            _clean_val(ai_top_picks.get('brief_summary', 'No AI summary available')),
+            _clean_val(ai_top_picks.get('key_insight', 'N/A')),
+            _clean_val(ai_top_picks.get('total_analyzed', 0)),
+            _clean_val(ai_top_picks.get('total_recommended', 0))
         ]
     })
     summary_df.to_excel(writer, sheet_name='AI_Top_Picks', index=False)
@@ -528,15 +571,16 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
             take_profit = pick.get('take_profit', f"${current_price*1.15:.2f} (+15%)")
             
             data.append({
-                'Rank': pick.get('rank', 0),
-                'Symbol': pick.get('symbol', 'N/A'),
+                'Rank': _clean_val(pick.get('rank', 0)),
+                'Symbol': _clean_val(pick.get('symbol', 'N/A')),
                 # 'Name': pick.get('name', 'N/A'), # Removed as per user request
                 # 'Sector': pick.get('sector', 'N/A'), # Removed as per user request
-                'Current Price': current_price,
-                'Buy Zone': buy_zone,
-                'Take Profit': take_profit,
-                'AI Confidence': f"{pick.get('confidence', 0)}%",
-                'Reasoning': pick.get('reasoning', '')
+                'Current Price': _clean_val(current_price),
+                'Buy Zone': _clean_val(buy_zone),
+                'Take Profit': _clean_val(take_profit),
+                'AI Confidence': _clean_val(f"{pick.get('confidence', 0)}%"),
+                'Macro Fit': _clean_val(pick.get('macro_fit', 'N/A')),
+                'Reasoning': _clean_val(pick.get('reasoning', '') or pick.get('why_selected', ''))
             })
             
         df = pd.DataFrame(data)
@@ -556,7 +600,8 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
         'D': 20,  # Buy Zone
         'E': 20,  # Take Profit
         'F': 15,  # AI Confidence
-        'G': 60   # Reasoning
+        'G': 15,  # Macro Fit
+        'H': 60   # Reasoning
     }
     for col_letter, width in column_widths.items():
         worksheet.column_dimensions[col_letter].width = width
@@ -611,45 +656,45 @@ def create_recommendations_sheet(results, writer, recommendation_types, sheet_na
             ultimate_score = result.get('ultimate_score')
             
             recommendations_data.append({
-                'Symbol': result.get('symbol', ''),
-                'Recommendation': result.get('recommendation', ''),
-                'Agreement': f"{result.get('strategies_agreeing', 0)}/5",
+                'Symbol': _clean_val(result.get('symbol', '')),
+                'Recommendation': _clean_val(result.get('recommendation', '')),
+                'Agreement': _clean_val(f"{result.get('strategies_agreeing', 0)}/5"),
                 
                 # Ultimate Score (NEW - combines all layers)
-                'Ultimate Score': ultimate_score if ultimate_score is not None else 'N/A',
+                'Ultimate Score': _clean_val(ultimate_score if ultimate_score is not None else 'N/A'),
                 # Entry Score (NEW - regime-aware entry suitability)
-                'Entry Score': result.get('entry_score', 'N/A'),
+                'Entry Score': _clean_val(result.get('entry_score', 'N/A')),
                 
-                'Quality Score': result.get('quality_score', 0),
-                'Consensus Score': result.get('consensus_score', 0),
-                'Confidence': f"{result.get('confidence', 0) * 100:.0f}%",
+                'Quality Score': _clean_val(result.get('quality_score', 0)),
+                'Consensus Score': _clean_val(result.get('consensus_score', 0)),
+                'Confidence': _clean_val(f"{result.get('confidence', 0) * 100:.0f}%"),
                 
                 # ML Predictions (NEW)
-                'ML Probability': f"{ml_prob * 100:.1f}%" if ml_prob is not None else 'N/A',
-                'ML Expected Return': f"{ml_return:+.1f}%" if ml_return is not None else 'N/A',
-                'ML Confidence': f"{ml_conf * 100:.1f}%" if ml_conf is not None else 'N/A',
+                'ML Probability': _clean_val(f"{ml_prob * 100:.1f}%" if ml_prob is not None else 'N/A'),
+                'ML Expected Return': _clean_val(f"{ml_return:+.1f}%" if ml_return is not None else 'N/A'),
+                'ML Confidence': _clean_val(f"{ml_conf * 100:.1f}%" if ml_conf is not None else 'N/A'),
                 
                 # AI Validation (NEW)
-                'AI Validation': result.get('ai_validation', 'N/A'),
-                'AI Risk Level': result.get('ai_risk_level', 'N/A'),
-                'AI Profit Potential': result.get('ai_profit_potential', 'N/A'),
-                'News Sentiment': result.get('ai_news_sentiment', 'N/A'),
-                'AI Verdict': result.get('ai_verdict', 'N/A'),
+                'AI Validation': _clean_val(result.get('ai_validation', 'N/A')),
+                'AI Risk Level': _clean_val(result.get('ai_risk_level', 'N/A')),
+                'AI Profit Potential': _clean_val(result.get('ai_profit_potential', 'N/A')),
+                'News Sentiment': _clean_val(result.get('ai_news_sentiment', 'N/A')),
+                'AI Verdict': _clean_val(result.get('ai_verdict', 'N/A')),
                 
                 # Catalyst Analysis (NEW)
-                'Catalyst Score': result.get('catalyst_score', 'N/A'),
-                'Earnings Outlook': result.get('earnings_outlook', 'N/A'),
-                'Top Catalysts': ' | '.join(result.get('growth_catalysts', [])[:3]) if result.get('growth_catalysts') else 'N/A',
+                'Catalyst Score': _clean_val(result.get('catalyst_score', 'N/A')),
+                'Earnings Outlook': _clean_val(result.get('earnings_outlook', 'N/A')),
+                'Top Catalysts': _clean_val(' | '.join(result.get('growth_catalysts', [])[:3]) if result.get('growth_catalysts') else 'N/A'),
                 
-                'Current Price': f"${result.get('current_price', 0):.2f}",
-                'Fundamentals': f"{fund.get('grade', 'N/A')} ({fund.get('score', 0):.0f})",
-                'Momentum': f"{mom.get('grade', 'N/A')} ({mom.get('score', 0):.0f})",
-                'Risk': f"{risk.get('grade', 'N/A')} ({risk.get('score', 0):.0f})",
-                'Sentiment': f"{sent.get('grade', 'N/A')} ({sent.get('score', 0):.0f})",
-                'Perspectives': ', '.join(result.get('agreeing_perspectives', [])),
-                'P/E Ratio': fund.get('pe_ratio', 'N/A'),
-                'Revenue Growth': f"{fund.get('revenue_growth', 0)*100:.1f}%" if fund.get('revenue_growth') else 'N/A',
-                'Beta': risk.get('beta', 'N/A')
+                'Current Price': _clean_val(f"${result.get('current_price', 0):.2f}"),
+                'Fundamentals': _clean_val(f"{fund.get('grade', 'N/A')} ({fund.get('score', 0):.0f})"),
+                'Momentum': _clean_val(f"{mom.get('grade', 'N/A')} ({mom.get('score', 0):.0f})"),
+                'Risk': _clean_val(f"{risk.get('grade', 'N/A')} ({risk.get('score', 0):.0f})"),
+                'Sentiment': _clean_val(f"{sent.get('grade', 'N/A')} ({sent.get('score', 0):.0f})"),
+                'Perspectives': _clean_val(', '.join(result.get('agreeing_perspectives', []))),
+                'P/E Ratio': _clean_val(fund.get('pe_ratio', 'N/A')),
+                'Revenue Growth': _clean_val(f"{fund.get('revenue_growth', 0)*100:.1f}%" if fund.get('revenue_growth') else 'N/A'),
+                'Beta': _clean_val(risk.get('beta', 'N/A'))
             })
         else:
             # Old format
@@ -712,76 +757,76 @@ def create_detailed_analysis_sheet(results, writer):
                 top_ml_feature = f"{top[0]}: {top[1]:.2f}"
 
             detailed_data.append({
-                'Symbol': result.get('symbol', ''),
-                'Recommendation': result.get('recommendation', ''),
-                'Agreement': f"{result.get('strategies_agreeing', 0)}/5",
+                'Symbol': _clean_val(result.get('symbol', '')),
+                'Recommendation': _clean_val(result.get('recommendation', '')),
+                'Agreement': _clean_val(f"{result.get('strategies_agreeing', 0)}/5"),
                 
                 # Ultimate Score (NEW - combines Quality + Consensus + ML)
-                'Ultimate Score': ultimate_score if ultimate_score is not None else None,
+                'Ultimate Score': _clean_val(ultimate_score if ultimate_score is not None else None),
                 
-                'Consensus Score': result.get('consensus_score', result.get('overall_score', 0)),
-                'Quality Score': result.get('quality_score', 0),
-                'Confidence %': result.get('confidence', 0) * 100,
+                'Consensus Score': _clean_val(result.get('consensus_score', result.get('overall_score', 0))),
+                'Quality Score': _clean_val(result.get('quality_score', 0)),
+                'Confidence %': _clean_val(result.get('confidence', 0) * 100),
                 
                 # ML Predictions (NEW)
-                'ML Probability %': round(ml_prob * 100, 1) if ml_prob is not None else None,
-                'ML Expected Return %': round(ml_return, 1) if ml_return is not None else None,
-                'ML Confidence %': round(ml_conf * 100, 1) if ml_conf is not None else None,
-                'ML Top Driver': top_ml_feature,
+                'ML Probability %': _clean_val(round(ml_prob * 100, 1) if ml_prob is not None else None),
+                'ML Expected Return %': _clean_val(round(ml_return, 1) if ml_return is not None else None),
+                'ML Confidence %': _clean_val(round(ml_conf * 100, 1) if ml_conf is not None else None),
+                'ML Top Driver': _clean_val(top_ml_feature),
                 
                 # AI Validation (NEW)
-                'AI Validation': result.get('ai_validation', 'N/A'),
-                'AI Risk Level': result.get('ai_risk_level', 'N/A'),
-                'AI Profit Potential': result.get('ai_profit_potential', 'N/A'),
-                'News Sentiment': result.get('ai_news_sentiment', 'N/A'),
-                'AI Hidden Risks': result.get('ai_hidden_risks', 'N/A'),
-                'AI Verdict': result.get('ai_verdict', 'N/A'),
+                'AI Validation': _clean_val(result.get('ai_validation', 'N/A')),
+                'AI Risk Level': _clean_val(result.get('ai_risk_level', 'N/A')),
+                'AI Profit Potential': _clean_val(result.get('ai_profit_potential', 'N/A')),
+                'News Sentiment': _clean_val(result.get('ai_news_sentiment', 'N/A')),
+                'AI Hidden Risks': _clean_val(result.get('ai_hidden_risks', 'N/A')),
+                'AI Verdict': _clean_val(result.get('ai_verdict', 'N/A')),
                 
                 # Catalyst Analysis (NEW)
-                'Catalyst Score': result.get('catalyst_score', 'N/A'),
-                'Earnings Outlook': result.get('earnings_outlook', 'N/A'),
-                'Growth Catalysts': ' | '.join(result.get('growth_catalysts', [])[:3]) if result.get('growth_catalysts') else 'N/A',
-                'Catalyst Risks': ' | '.join(result.get('catalyst_risks', [])[:3]) if result.get('catalyst_risks') else 'N/A',
-                'Sentiment Summary': result.get('sentiment_summary', 'N/A'),
-                'Catalyst Summary': result.get('catalyst_summary', 'N/A'),
+                'Catalyst Score': _clean_val(result.get('catalyst_score', 'N/A')),
+                'Earnings Outlook': _clean_val(result.get('earnings_outlook', 'N/A')),
+                'Growth Catalysts': _clean_val(' | '.join(result.get('growth_catalysts', [])[:3]) if result.get('growth_catalysts') else 'N/A'),
+                'Catalyst Risks': _clean_val(' | '.join(result.get('catalyst_risks', [])[:3]) if result.get('catalyst_risks') else 'N/A'),
+                'Sentiment Summary': _clean_val(result.get('sentiment_summary', 'N/A')),
+                'Catalyst Summary': _clean_val(result.get('catalyst_summary', 'N/A')),
                 
-                'Sector': result.get('sector', 'Unknown'),
-                'Current Price': result.get('current_price', 0),
-                'Fundamentals Score': fund.get('score', 0),
-                'Fundamentals Grade': fund.get('grade', 'N/A'),
-                'P/E Ratio': fund.get('pe_ratio'),
-                'Revenue Growth %': fund.get('revenue_growth'),
-                'Profit Margin %': fund.get('profit_margin'),
-                'ROE %': fund.get('roe'),
-                'Debt/Equity': fund.get('debt_equity'),
-                'Momentum Score': mom.get('score', 0),
-                'Momentum Grade': mom.get('grade', 'N/A'),
-                'RSI': mom.get('rsi'),
-                'Price Trend': mom.get('price_trend'),
-                'Volume Trend': mom.get('volume_trend'),
-                'Relative Strength %': mom.get('relative_strength'),
-                'MA 50': mom.get('ma_50'),
-                'MA 200': mom.get('ma_200'),
-                'Technical Score': tech.get('score', 0),
-                'Technical Grade': tech.get('grade', 'N/A'),
-                'MACD': tech.get('macd'),
-                'MACD Signal': tech.get('macd_signal'),
-                'MACD Histogram': tech.get('macd_hist'),
-                'Bollinger Position %': tech.get('bollinger_position'),
-                'Support Level': tech.get('support'),
-                'Resistance Level': tech.get('resistance'),
-                'Risk Score': risk.get('score', 0),
-                'Risk Grade': risk.get('grade', 'N/A'),
-                'Risk Level': risk.get('risk_level', ''),
-                'Volatility %': risk.get('volatility'),
-                'Max Drawdown %': risk.get('max_drawdown'),
-                'VaR 95% %': risk.get('var_95'),
-                'Sharpe Ratio': risk.get('sharpe_ratio'),
-                'Sentiment Score': sent.get('score', 0),
-                'Sentiment Grade': sent.get('grade', 'N/A'),
-                'Target Upside %': sent.get('target_upside'),
-                'Institutional Ownership %': sent.get('institutional_ownership'),
-                'Analyst Rating': sent.get('analyst_rating', 'N/A')
+                'Sector': _clean_val(result.get('sector', 'Unknown')),
+                'Current Price': _clean_val(result.get('current_price', 0)),
+                'Fundamentals Score': _clean_val(fund.get('score', 0)),
+                'Fundamentals Grade': _clean_val(fund.get('grade', 'N/A')),
+                'P/E Ratio': _clean_val(fund.get('pe_ratio')),
+                'Revenue Growth %': _clean_val(fund.get('revenue_growth')),
+                'Profit Margin %': _clean_val(fund.get('profit_margin')),
+                'ROE %': _clean_val(fund.get('roe')),
+                'Debt/Equity': _clean_val(fund.get('debt_equity')),
+                'Momentum Score': _clean_val(mom.get('score', 0)),
+                'Momentum Grade': _clean_val(mom.get('grade', 'N/A')),
+                'RSI': _clean_val(mom.get('rsi')),
+                'Price Trend': _clean_val(mom.get('price_trend')),
+                'Volume Trend': _clean_val(mom.get('volume_trend')),
+                'Relative Strength %': _clean_val(mom.get('relative_strength')),
+                'MA 50': _clean_val(mom.get('ma_50')),
+                'MA 200': _clean_val(mom.get('ma_200')),
+                'Technical Score': _clean_val(tech.get('score', 0)),
+                'Technical Grade': _clean_val(tech.get('grade', 'N/A')),
+                'MACD': _clean_val(tech.get('macd')),
+                'MACD Signal': _clean_val(tech.get('macd_signal')),
+                'MACD Histogram': _clean_val(tech.get('macd_hist')),
+                'Bollinger Position %': _clean_val(tech.get('bollinger_position')),
+                'Support Level': _clean_val(tech.get('support')),
+                'Resistance Level': _clean_val(tech.get('resistance')),
+                'Risk Score': _clean_val(risk.get('score', 0)),
+                'Risk Grade': _clean_val(risk.get('grade', 'N/A')),
+                'Risk Level': _clean_val(risk.get('risk_level', '')),
+                'Volatility %': _clean_val(risk.get('volatility')),
+                'Max Drawdown %': _clean_val(risk.get('max_drawdown')),
+                'VaR 95% %': _clean_val(risk.get('var_95')),
+                'Sharpe Ratio': _clean_val(risk.get('sharpe_ratio')),
+                'Sentiment Score': _clean_val(sent.get('score', 0)),
+                'Sentiment Grade': _clean_val(sent.get('grade', 'N/A')),
+                'Target Upside %': _clean_val(sent.get('target_upside')),
+                'Institutional Ownership %': _clean_val(sent.get('institutional_ownership')),
+                'Analyst Rating': _clean_val(sent.get('analyst_rating', 'N/A'))
             })
         else:
             detailed_data.append({

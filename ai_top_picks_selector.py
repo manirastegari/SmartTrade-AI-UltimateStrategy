@@ -1,26 +1,24 @@
+
 #!/usr/bin/env python3
 """
-AI Top Picks Selector
-Combines ALL analytical layers to select best trading opportunities:
+AI Top Picks Selector (Enhanced with Chain-of-Thought)
+Combines ALL analytical layers using "Debate-Style" reasoning:
 - Layer 1: Quality Metrics (fundamentals, momentum, risk, sentiment)
 - Layer 2: Multi-Strategy Consensus (4 perspectives)
 - Layer 3: ML Predictions (30-feature model)
-- Layer 4: AI Validation (news, sentiment, hidden risks)
-
-Provides BRIEF, ACTIONABLE recommendations
+- Layer 4: AI Validation (news, macro fit)
+- Layer 5: Chain-of-Thought Reasoning (Deep Logic)
 """
 
 import os
 import json
 import re
-from typing import Dict, List, Tuple, Any, Optional
-from datetime import datetime
-
+import logging
+from typing import Dict, List, Any, Optional
 
 class AITopPicksSelector:
     """
-    AI-powered top picks selection using complete Ultimate Strategy intelligence
-    Brief, instructive, actionable recommendations
+    AI-powered top picks selection using Chain-of-Thought reasoning.
     """
     
     def __init__(self):
@@ -34,104 +32,93 @@ class AITopPicksSelector:
         max_picks: int = 10
     ) -> Dict:
         """
-        Analyze ALL consensus picks and select THE BEST using complete intelligence
-        
-        Returns BRIEF, ACTIONABLE recommendations:
-        {
-            'ai_top_picks': [
-                {
-                    'symbol': 'AAPL',
-                    'rank': 1,
-                    'ai_score': 95,  # Combined intelligence score
-                    'why_selected': 'Brief 1-sentence reason',
-                    'action': 'BUY' | 'STRONG BUY' | 'HOLD',
-                    'position_size': 'Large' | 'Medium' | 'Small',
-                    'entry_timing': 'Immediate' | 'Wait for dip' | 'Scale in'
-                },
-                ...
-            ],
-            'brief_summary': '2-3 sentence market overview',
-            'key_insight': '1 sentence most important insight',
-            'total_analyzed': int,
-            'total_recommended': int
-        }
+        Analyze ALL consensus picks and select THE BEST using Debate/CoT reasoning.
         """
         if not self.enabled or not consensus_picks:
             return self._default_selection(consensus_picks, max_picks)
         
         try:
             from xai_client import XAIClient
-            
             client = XAIClient(api_key=self.api_key)
             
             # Prepare concise data for AI analysis
-            picks_summary = self._prepare_picks_summary(consensus_picks[:30])  # Top 30 to analyze
+            # We select top 40 candidates to give AI good variety to filter down
+            candidates = consensus_picks[:40]
+            picks_summary = self._prepare_picks_summary(candidates)
             
-            prompt = f"""You are an expert stock picker analyzing {len(picks_summary)} stocks using complete intelligence:
-- Quality metrics (fundamentals, momentum, risk, sentiment)
-- Multi-strategy consensus (5 investment perspectives)
-- ML predictions (30-feature model)
-- Real-time validation (news, sentiment, hidden risks)
+            # Chain-of-Thought Prompt
+            prompt = f"""You are a Senior Portfolio Manager conducting a final investment committee review.
 
-**Market Context:**
-VIX: {market_context.get('vix', 'N/A')} | Regime: {market_context.get('regime', 'Unknown')} | Trend: {market_context.get('trend', 'Unknown')}
+**Objective:**
+Select the TOP {max_picks} highest-conviction trading opportunities from the candidate list below.
+Use "Chain of Thought" reasoning: Debate the pros/cons of each candidate against the current Macro Regime.
 
-**Stocks to Analyze:**
+**Current Macro Context:**
+- Regime: {market_context.get('regime', 'Unknown')}
+- VIX: {market_context.get('vix', 'N/A')} (Risk Level)
+- Macro Score: {market_context.get('macro_score', 'N/A')}/100
+- 10Y Bond Yield: {market_context.get('yield_10y', 'N/A')}
+- Dollar Index: {market_context.get('dollar_index', 'N/A')}
+- Market Trend: {market_context.get('trend', 'Unknown')}
+
+**Candidate Stocks (Pre-screened by Quant Models):**
 {picks_summary}
 
-**Your Task:**
-Select the TOP {max_picks} BEST trading opportunities RIGHT NOW.
+**Instructions:**
+1. **Analyze Regime Fit**: Which *types* of stocks prosper in this specific macro environment? (e.g. if Yields UP -> Avoid Debt/Growth, Favor Cash/Value).
+2. **Debate Candidates**: For the best candidates, debate their strengths (Consensus/ML) vs weaknesses (Risk/Macro Fit).
+3. **Select Winners**: Choose the top {max_picks} that have the best *Risk-Adjusted* potential.
 
-**Requirements:**
-1. Be BRIEF and ACTIONABLE (no long explanations)
-2. Consider ALL data layers (quality, consensus, ML, validation)
-3. Rank by overall opportunity (not just one metric)
-4. Provide clear entry timing and position sizing
-5. One-sentence reason for each pick
-
-**Output Format (JSON):**
+**Output Format (Strict JSON):**
 {{
+    "reasoning_trace": "Your step-by-step logic. e.g. 'Given rising yields, I am rejecting high-PE growth names... AAPL is retained due to cash pile...'",
     "top_picks": [
         {{
             "symbol": "AAPL",
             "rank": 1,
-            "ai_score": 95,
-            "why_selected": "Strong fundamentals + ML confirms + positive news momentum",
+            "ai_score": 96,
+            "macro_fit": "High/Neutral/Low",
+            "why_selected": "Strong fundamentals + ML confirms. Cash pile offsets yield risk.",
             "action": "STRONG BUY",
             "position_size": "Large",
             "entry_timing": "Immediate"
         }},
         ...
     ],
-    "brief_summary": "Market conditions favorable. Focus on tech leaders with ML confirmation.",
-    "key_insight": "Quality + ML alignment = highest conviction trades"
+    "brief_summary": "2-3 sentences summarizing the strategy for today.",
+    "key_insight": "The 'Alpha' insight (e.g. 'Market is ignoring X...')"
 }}
-
-IMPORTANT: Keep it BRIEF. One sentence per pick. Clear actions."""
+"""
 
             response = client.chat(
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,  # Balanced - not too creative
-                max_tokens=2000
+                temperature=0.4,  # Slightly higher for reasoning capability
+                max_tokens=2500
             )
 
             parsed = self._normalize_top_pick_response(response)
             if not parsed:
-                print("⚠️ Could not parse AI response, using default selection")
+                print("⚠️ Could not parse AI response, using fallback.")
                 return self._default_selection(consensus_picks, max_picks)
 
             top_picks_raw = parsed.get('top_picks') or parsed.get('ai_top_picks') or []
+            
+            # Inject reasoning trace if available
+            reasoning_trace = parsed.get('reasoning_trace', 'No trace provided.')
 
             return {
                 'ai_top_picks': top_picks_raw[:max_picks],
                 'brief_summary': parsed.get('brief_summary', ''),
                 'key_insight': parsed.get('key_insight', ''),
-                'total_analyzed': len(consensus_picks),
+                'reasoning_trace': reasoning_trace,
+                'total_analyzed': len(candidates),
                 'total_recommended': min(max_picks, len(top_picks_raw))
             }
                 
         except Exception as e:
             print(f"⚠️ AI top picks selection failed: {e}")
+            import traceback
+            traceback.print_exc()
             return self._default_selection(consensus_picks, max_picks)
 
     def _normalize_top_pick_response(self, response: Any) -> Optional[Dict[str, Any]]:
@@ -139,241 +126,125 @@ IMPORTANT: Keep it BRIEF. One sentence per pick. Clear actions."""
         payload: Optional[Dict[str, Any]] = None
 
         if isinstance(response, dict):
+            # If the response is already a dict, check if it has the keys or 'message'
+            if 'choices' in response: # OpenAI format wrapper
+                 try:
+                     content = response['choices'][0]['message']['content']
+                     return self._extract_json_from_text(content)
+                 except:
+                     pass
             payload = dict(response)
         elif isinstance(response, str):
             payload = self._extract_json_from_text(response)
 
-        if payload is None and isinstance(response, dict):
-            raw = response.get('raw')
-            if isinstance(raw, str):
-                payload = self._extract_json_from_text(raw)
-
         if payload is None:
+            # Check validation of XAI client internal structure
+            if isinstance(response, dict) and 'top_picks' in response:
+                return response
             return None
 
-        payload.pop('model_used', None)
-        payload.pop('raw', None)
-
+        # Clean/Validate
         if not any(key in payload for key in ('top_picks', 'ai_top_picks')):
+            # Sometimes AI puts top_picks inside a 'result' or 'output' key
+            for k in ['result', 'output', 'selection']:
+                if isinstance(payload.get(k), dict) and 'top_picks' in payload[k]:
+                    return payload[k]
             return None
 
         return payload
 
     def _extract_json_from_text(self, text: str) -> Optional[Dict[str, Any]]:
-        """Best-effort extraction of JSON object from a text response."""
-        if not isinstance(text, str):
-            return None
-
+        if not isinstance(text, str): return None
         candidate = text.strip()
+        
+        # Try finding the largest {...} block
+        # Because we asked for strict JSON, but sometimes they add markdown ```json ... ```
+        json_pattern = re.compile(r'\{.*\}', re.DOTALL)
+        match = json_pattern.search(candidate)
+        if match:
+            candidate = match.group()
+        
         try:
             return json.loads(candidate)
         except Exception:
-            pass
-
-        match = re.search(r'\{[\s\S]*\}', candidate)
-        if match:
+            # Simple repair: sometimes trailing commas cause issues
             try:
-                return json.loads(match.group())
-            except Exception:
+                # Basic cleanup
+                candidate = re.sub(r',\s*\}', '}', candidate)
+                candidate = re.sub(r',\s*\]', ']', candidate)
+                return json.loads(candidate)
+            except:
                 return None
-        return None
     
     def _prepare_picks_summary(self, picks: List[Dict]) -> str:
         """Prepare concise summary of picks for AI analysis"""
         summary_lines = []
         
         for pick in picks:
-            # Extract key data
             symbol = pick.get('symbol', 'N/A')
             quality = pick.get('quality_score', 0)
-            consensus = pick.get('consensus_score', 0)
             agreement = pick.get('strategies_agreeing', 0)
             ml_prob = pick.get('ml_probability', 0)
-            ml_return = pick.get('ml_expected_return', 0)
             ultimate = pick.get('ultimate_score', 0)
             ai_val = pick.get('ai_validation', 'N/A')
-            ai_risk = pick.get('ai_risk_level', 'N/A')
-            ai_profit = pick.get('ai_profit_potential', 'N/A')
-            sentiment = pick.get('ai_news_sentiment', 'N/A')
             
-            # Concise one-line summary
             line = (
-                f"{symbol}: Quality={quality:.0f} | Consensus={consensus:.0f} | "
-                f"Agreement={agreement}/5 | ML={ml_prob*100:.0f}% (+{ml_return:.1f}%) | "
-                f"Ultimate={ultimate:.0f} | AI={ai_val}/{ai_risk}/{ai_profit} | News={sentiment}"
+                f"- {symbol}: UltScore={ultimate:.0f} | Quality={quality:.0f} | "
+                f"Consensus={agreement}/5 | ML_Prob={ml_prob*100:.0f}% | "
+                f"Validation={ai_val}"
             )
             summary_lines.append(line)
         
         return "\n".join(summary_lines)
     
     def _default_selection(self, consensus_picks: List[Dict], max_picks: int) -> Dict:
-        """
-        Fallback selection when AI unavailable
-        Uses Ultimate Score + validation to rank
-        """
-        if not consensus_picks:
-            return {
-                'ai_top_picks': [],
-                'brief_summary': 'No consensus picks available for selection.',
-                'key_insight': 'Increase stock universe or relax filters.',
-                'total_analyzed': 0,
-                'total_recommended': 0
-            }
-        
-        # Determine global trading mode if passed through market_context on picks
-        # (FixedUltimateStrategyAnalyzer will attach this later when needed)
-        global_mode = None
-        if consensus_picks and isinstance(consensus_picks[0], dict):
-            global_mode = consensus_picks[0].get('global_trading_mode') or None
-
-        # Score each pick using all available data
-        scored_picks = []
-        
-        for pick in consensus_picks:
-            # Base score from Ultimate Score (combines quality + consensus + ML)
-            ultimate_score = pick.get('ultimate_score', 0)
-            
-            # Bonus for AI confirmation
-            ai_val = pick.get('ai_validation', '')
-            ai_bonus = 0
-            if ai_val == 'CONFIRMED':
-                ai_bonus = 10
-            elif ai_val == 'REJECTED':
-                ai_bonus = -20
-            
-            # Bonus for higher agreement (2/5..5/5)
-            agreement_bonus = (pick.get('strategies_agreeing', 0) - 2) * 5
-            
-            # Penalty for high AI risk
-            risk_penalty = 0
-            ai_risk = pick.get('ai_risk_level', '')
-            if ai_risk == 'HIGH':
-                risk_penalty = -10
-            elif ai_risk == 'LOW':
-                risk_penalty = 5
-            
-            # Base AI score
-            ai_score = ultimate_score + ai_bonus + agreement_bonus + risk_penalty
-
-            # Regime-aware adjustment from entry_score if available
-            entry_score = pick.get('entry_score')
-            if entry_score is not None:
-                # Blend ultimate_score-based ai_score with entry_score (both 0-100)
-                ai_score = 0.5 * ai_score + 0.5 * float(entry_score)
-
-            # Global trading mode adjustments
-            mode = global_mode or 'NORMAL'
-            if mode == 'DEFENSIVE':
-                ai_score -= 10
-            elif mode == 'NO_NEW_TRADES':
-                ai_score -= 30
-            elif mode == 'AGGRESSIVE':
-                ai_score += 5
-            ai_score = max(0, min(100, ai_score))  # Clamp 0-100
-            
-            # Determine action and base position size from regime-aware score
-            if ai_score >= 85 and pick.get('strategies_agreeing', 0) >= 3:
-                action = 'STRONG BUY'
-                position_size = 'Large'
-            elif ai_score >= 75:
-                action = 'BUY'
-                position_size = 'Medium'
-            else:
-                action = 'HOLD'
-                position_size = 'Small'
-
-            # In NO_NEW_TRADES mode, force no new entries
-            today_status = 'OK_TO_ENTER'
-            if mode == 'NO_NEW_TRADES':
-                action = 'HOLD'
-                position_size = 'Small'
-                today_status = 'NO_NEW_POSITION'
-            elif mode == 'DEFENSIVE':
-                # Defensive: Only allow entries for top-tier, high score names
-                if ai_score < 90 or pick.get('strategies_agreeing', 0) < 3:
-                    action = 'HOLD'
-                    position_size = 'Small'
-                    today_status = 'ONLY_SCALE_IN'
-            
-            # Entry timing based on ML and regime
-            ml_prob = pick.get('ml_probability', 0)
-            if ml_prob and ml_prob > 0.7:
-                entry_timing = 'Immediate' if mode in ('NORMAL', 'AGGRESSIVE') else 'Scale in'
-            elif ml_prob and ml_prob > 0.6:
-                entry_timing = 'Scale in' if mode != 'NO_NEW_TRADES' else 'Wait for confirmation'
-            else:
-                entry_timing = 'Wait for confirmation'
-            
-            # Why selected (brief)
-            reasons = []
-            if pick.get('strategies_agreeing', 0) == 5:
-                reasons.append('5/5 consensus')
-            elif pick.get('strategies_agreeing', 0) == 4:
-                reasons.append('4/5 consensus')
-            if pick.get('quality_score', 0) >= 85:
-                reasons.append('top quality')
-            if ai_val == 'CONFIRMED':
-                reasons.append('AI confirmed')
-            if ml_prob and ml_prob > 0.7:
-                reasons.append('ML confirms')
-            
-            why_selected = ' + '.join(reasons) if reasons else 'Strong metrics'
-            
-            scored_picks.append({
-                'symbol': pick.get('symbol', 'N/A'),
-                'rank': 0,  # Will assign after sorting
-                'ai_score': round(ai_score, 1),
-                'why_selected': why_selected,
-                'action': action,
-                'position_size': position_size,
-                'entry_timing': entry_timing,
-                'today_status': today_status,
-                'ultimate_score': ultimate_score,
-                'quality_score': pick.get('quality_score', 0),
-                'agreement': pick.get('strategies_agreeing', 0)
-            })
-        
-        # Sort by AI score
-        scored_picks.sort(key=lambda x: x['ai_score'], reverse=True)
-        
-        # Assign ranks
-        for i, pick in enumerate(scored_picks[:max_picks], 1):
-            pick['rank'] = i
-        
-        # Generate brief summary
-        top_picks = scored_picks[:max_picks]
-        strong_buys = sum(1 for p in top_picks if p['action'] == 'STRONG BUY')
-        avg_score = sum(p['ai_score'] for p in top_picks) / len(top_picks) if top_picks else 0
-        
-        brief_summary = (
-            f"Selected {len(top_picks)} top opportunities from {len(consensus_picks)} candidates. "
-            f"{strong_buys} STRONG BUY rated. Average AI score: {avg_score:.0f}/100."
+        """Fallback logic if AI fails."""
+        # Simple sorting by Ultimate Score (which already includes quality/consensus/ML)
+        sorted_picks = sorted(
+            consensus_picks, 
+            key=lambda x: float(x.get('ultimate_score', 0) or 0), 
+            reverse=True
         )
         
-        key_insight = "Focus on 5/5 and 4/5 consensus picks with AI confirmation for highest confidence."
-        
+        top_picks = []
+        for i, pick in enumerate(sorted_picks[:max_picks], 1):
+            top_picks.append({
+                'symbol': pick.get('symbol'),
+                'rank': i,
+                'ai_score': pick.get('ultimate_score', 0),
+                'macro_fit': 'Neutral (Fallback)',
+                'why_selected': 'High quantitative score (AI unavailable)',
+                'action': 'BUY',
+                'position_size': 'Medium',
+                'entry_timing': 'Scale in',
+                # CRITICAL FIX: Pass accurate price data for Excel
+                'current_price': pick.get('current_price', 0),
+                'buy_zone': pick.get('buy_zone') or f"${pick.get('current_price', 0):.2f} - ${pick.get('current_price', 0)*1.02:.2f}",
+                'take_profit': pick.get('take_profit') or f"${pick.get('current_price', 0)*1.15:.2f} (+15%)",
+                'confidence': int(pick.get('confidence', 0)*100),
+                'quality_score': pick.get('quality_score', 0)
+            })
+            
         return {
             'ai_top_picks': top_picks,
-            'brief_summary': brief_summary,
-            'key_insight': key_insight,
+            'brief_summary': 'AI unavailable. Selections based on quantitative Ultimate Score.',
+            'key_insight': 'Ensure XAI API Key is valid for advanced reasoning.',
+            'reasoning_trace': 'Fallback mode active.',
             'total_analyzed': len(consensus_picks),
             'total_recommended': len(top_picks)
         }
 
-
 def format_ai_picks_display(ai_picks_result: Dict) -> str:
-    """Format AI top picks for console/interface display - BRIEF format"""
-    
+    """Format AI top picks for console/interface display."""
     lines = []
     lines.append("\n" + "="*80)
-    lines.append("🎯 AI TOP PICKS - ULTIMATE STRATEGY RECOMMENDATION")
+    lines.append("🎯 AI TOP PICKS - CHAIN-OF-THOUGHT REASONING")
     lines.append("="*80)
     
-    # Summary
-    lines.append(f"\n📊 {ai_picks_result.get('brief_summary', 'No summary available')}")
-    lines.append(f"💡 KEY INSIGHT: {ai_picks_result.get('key_insight', 'N/A')}")
+    lines.append(f"\n🧠 LOGIC TRACE: {ai_picks_result.get('reasoning_trace', 'N/A')[:300]}...") # Truncate for display
+    lines.append(f"📊 SUMMARY: {ai_picks_result.get('brief_summary', 'N/A')}")
+    lines.append(f"💡 INSIGHT: {ai_picks_result.get('key_insight', 'N/A')}")
     
-    # Top picks table
     lines.append(f"\n🏆 TOP {len(ai_picks_result.get('ai_top_picks', []))} PICKS:")
     lines.append("-" * 80)
     
@@ -381,23 +252,16 @@ def format_ai_picks_display(ai_picks_result: Dict) -> str:
         rank = pick.get('rank', 0)
         symbol = pick.get('symbol', 'N/A')
         ai_score = pick.get('ai_score', 0)
+        macro = pick.get('macro_fit', 'N/A')
         action = pick.get('action', 'HOLD')
-        position = pick.get('position_size', 'Small')
-        timing = pick.get('entry_timing', 'Wait')
         why = pick.get('why_selected', 'N/A')
         
-        # Action emoji
         action_emoji = '🚀' if action == 'STRONG BUY' else '✅' if action == 'BUY' else '⚠️'
         
         lines.append(
-            f"{rank}. {action_emoji} {symbol:6} | AI Score: {ai_score:5.1f} | {action:12} | "
-            f"{position:7} position | {timing:20}"
+            f"{rank}. {action_emoji} {symbol:6} | Score: {ai_score:5.1f} | MacroFit: {macro:10} | {action}"
         )
         lines.append(f"   Why: {why}")
-    
-    lines.append("="*80)
-    lines.append(f"📈 Analyzed: {ai_picks_result.get('total_analyzed', 0)} | "
-                 f"Recommended: {ai_picks_result.get('total_recommended', 0)}")
+
     lines.append("="*80 + "\n")
-    
     return "\n".join(lines)

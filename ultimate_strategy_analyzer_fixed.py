@@ -21,6 +21,8 @@ from typing import List, Dict, Optional
 import streamlit as st
 from collections import defaultdict
 from premium_stock_analyzer import PremiumStockAnalyzer
+from rate_limit_manager import rate_limit_manager
+from macro_economic_analyzer import MacroEconomicAnalyzer
 
 # ML Enhancement
 try:
@@ -76,7 +78,7 @@ try:
     MARKET_DAY_ADVISOR_AVAILABLE = True
 except ImportError:
     MARKET_DAY_ADVISOR_AVAILABLE = False
-    print("⚠️ Market Day Advisor not available - running without skip warnings")
+    # print("⚠️ Market Day Advisor not available - running without skip warnings")
 
 # Short-Term Momentum Scanner (NEW - Phase 2)
 try:
@@ -84,7 +86,7 @@ try:
     SHORT_TERM_MOMENTUM_AVAILABLE = True
 except ImportError:
     SHORT_TERM_MOMENTUM_AVAILABLE = False
-    print("⚠️ Short-Term Momentum Scanner not available - running without swing trade detection")
+    # print("⚠️ Short-Term Momentum Scanner not available - running without swing trade detection")
 
 
 class FixedUltimateStrategyAnalyzer:
@@ -149,8 +151,6 @@ class FixedUltimateStrategyAnalyzer:
             else:
                 print("⚠️ AI Validator disabled - Grok API key not found")
         
-        # Initialize AI Top Picks Selector (NEW)
-        self.ai_picks_selector = None
         if AI_PICKS_AVAILABLE:
             print("🎯 Initializing AI Top Picks Selector...")
             self.ai_picks_selector = AITopPicksSelector()
@@ -158,6 +158,10 @@ class FixedUltimateStrategyAnalyzer:
                 print("✅ AI Top Picks enabled - will select best opportunities using complete intelligence")
             else:
                 print("⚠️ AI Top Picks will use algorithmic fallback - Grok API key not found")
+        
+        # Initialize Macro Economic Analyzer (NEW)
+        self.macro_analyzer = MacroEconomicAnalyzer()
+        print("🌍 Initializing Macro-Economic Analyzer (Yields, DXY, VIX)...")
         
         # Initialize AI Catalyst Analyzer (NEW)
         self.catalyst_analyzer = None
@@ -266,9 +270,25 @@ class FixedUltimateStrategyAnalyzer:
         
         # STEP 2: Analyze market conditions
         if progress_callback:
-            progress_callback("Analyzing market conditions...", 10)
+            progress_callback("Analyzing market conditions (finding regime)...", 10)
         
+        # Get base market analysis
         market_analysis = self._analyze_market_conditions()
+        
+        # Prepare context from what we ALREADY know (to avoid re-fetching failures)
+        macro_context_args = {
+            'vix': market_analysis.get('vix_level'),
+            'spy_trend': 'UP' if market_analysis.get('spy_return_1d', 0) > 0 else 'DOWN' # Simple proxy from 1d return
+        }
+        
+        # Get REAL Macro Logic (Yields, DXY) + Merge with known VIX
+        macro_context = self.macro_analyzer.analyze_macro_context(external_context=macro_context_args)
+        if macro_context:
+            print(f"   Using Macro Context: {macro_context.get('summary')}")
+            # Merge macro data into market_analysis
+            market_analysis.update(macro_context)
+            market_analysis['macro_regime'] = macro_context.get('regime')
+            market_analysis['macro_score'] = macro_context.get('macro_score')
         
         # Inject AI Phase 1 Context
         if ai_market_reasoning:
@@ -470,6 +490,28 @@ class FixedUltimateStrategyAnalyzer:
         )
         
         # STEP 7.5: AI TOP PICKS SELECTION (NEW - combines ALL intelligence layers)
+        
+        # Calculate Base Ultimate Score (Pre-AI) for ALL picks
+        # This ensures we have a score even if AI fails or for validation
+        print(f"📊 Calculating Ultimate Scores for {len(consensus_picks)} candidates...")
+        for pick in consensus_picks:
+            try:
+                qual_score = float(pick.get('quality_score', 0) or 0)
+                cons_score = float(pick.get('consensus_score', 0) or 0)
+                ml_prob = pick.get('ml_probability')
+                
+                if ml_prob is not None:
+                    # Full scoring with ML
+                    ml_score = float(ml_prob) * 100.0
+                    uv_score = (qual_score * 0.40) + (cons_score * 0.30) + (ml_score * 0.30)
+                else:
+                    # Fallback without ML (re-weight)
+                    uv_score = (qual_score * 0.60) + (cons_score * 0.40)
+                
+                pick['ultimate_score'] = uv_score
+            except Exception:
+                pick['ultimate_score'] = float(pick.get('quality_score', 0) or 0)
+
         ai_top_picks = None
         if self.ai_picks_selector and consensus_picks:
             print(f"\n{'='*80}")
@@ -770,8 +812,21 @@ class FixedUltimateStrategyAnalyzer:
             """Shared analysis routine so we can reuse it when backfilling."""
             try:
                 # Removed progress_callback from thread to prevent Streamlit context errors
-
-                stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
+                
+                # Smart Rate Limiting (Exponential Backoff)
+                rate_limit_manager.acquire('YAHOO')
+                
+                try:
+                    stock_data = self.analyzer.data_fetcher.get_comprehensive_stock_data(symbol)
+                    rate_limit_manager.success('YAHOO')
+                except Exception as e:
+                    if '429' in str(e) or 'Too Many Requests' in str(e):
+                        rate_limit_manager.handle_error('YAHOO', 429)
+                        print(f"   ⚠️ Rate limit hit for {symbol}, backing off...")
+                        return False # Retry logic is handled by backoff + failed_symbols list checks later? 
+                        # Actually just failing here means it goes to failed_symbols.
+                    raise e
+                
                 if not stock_data or 'data' not in stock_data:
                     failed_symbols.append(symbol)
                     return False
@@ -842,9 +897,10 @@ class FixedUltimateStrategyAnalyzer:
                 # Explicitly clear memory after each batch
                 gc.collect()
 
-                if batch_end < total:
-                    print("😴 Resting 15 seconds before next batch (avoiding rate limits)...")
-                    time.sleep(15)
+                # No manual sleep needed - Smart Rate Limiter handles it dynamically
+                # if batch_end < total:
+                #     print("😴 Resting 15 seconds before next batch (avoiding rate limits)...")
+                #     time.sleep(15)
 
         print(f"\n✅ Quality analysis complete: {len(results)}/{total} stocks successful")
 
