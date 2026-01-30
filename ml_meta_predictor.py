@@ -248,12 +248,13 @@ class MLMetaPredictor:
         
         # Market Context (5 NEW features - critical for environment awareness)
         market = stock_data.get('market_context', {})
-        vix_level_raw = market.get('vix')
+        vix_level_raw = market.get('vix') or market.get('vix_proxy') or market.get('vix_level')
         vix_available = vix_level_raw is not None
         try:
-            vix_level = float(vix_level_raw) if vix_available else 0.0
+            # Use 18.0 as a neutral baseline if VIX is unavailable, rather than 0.0 which biases the model
+            vix_level = float(vix_level_raw) if (vix_available and float(vix_level_raw) > 3.0) else 18.0
         except Exception:
-            vix_level = 0.0
+            vix_level = 18.0
             vix_available = False
         regime = market.get('regime', 'normal')
         trend = market.get('trend', 'SIDEWAYS')

@@ -2092,9 +2092,9 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             print(f"⚠️ Market regime signals unavailable: {signals_err}")
 
         # 3) Normalize key fields so downstream consumers see real data instead of defaults
-        vix_level = ctx.get('vix_proxy') or ctx.get('vix')
-        if vix_level is None:
-            ctx['vix'] = None
+        vix_level = ctx.get('vix_proxy') or ctx.get('vix') or ctx.get('vix_level')
+        if vix_level is None or str(vix_level) == 'N/A' or float(vix_level) == 0:
+            ctx['vix'] = 18.0
         else:
             ctx['vix'] = float(vix_level)
 

@@ -318,8 +318,76 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Energy Mid-Caps
         'CHRD', 'CNX', 'AR', 'PR', 'MGY', 'CIVI'
+    ],
+    
+    # ========================================================================
+    # EXPANSION: GROWTH STOCKS - Tier 3 (50 stocks)
+    # High-growth companies with strong momentum
+    # ========================================================================
+    'growth_stocks': [
+        # Tech Growth
+        'TSLA', 'COIN', 'SQ', 'SHOP', 'RBLX', 'U', 'DASH', 'PATH', 'CFLT',
+        'BILL', 'PCTY', 'PAYC', 'HUBS', 'DOCU', 'OKTA', 'ZM', 'MDB', 'NET',
+        'CRWD', 'SNOW', 'PLTR', 'ANET', 'SMCI', 'ARM', 'IOT',
+        
+        # Fintech
+        'SOFI', 'HOOD', 'UPST', 'AFRM', 'NU', 'MELI',
+        
+        # Clean Energy Growth
+        'ENPH', 'SEDG', 'RUN', 'NOVA', 'FSLR', 'ARRY',
+        
+        # EV & Mobility
+        'RIVN', 'LCID', 'CHPT', 'LI', 'NIO', 'XPEV'
+    ],
+    
+    # ========================================================================
+    # EXPANSION: DIVIDEND ARISTOCRATS - Tier 1 (40 stocks)
+    # 25+ years of consecutive dividend increases
+    # ========================================================================
+    'dividend_aristocrats': [
+        # Consumer Staples Aristocrats
+        'CLX', 'HRL', 'SYY', 'GWW', 'CTAS', 'CINF',
+        
+        # Industrial Aristocrats  
+        'SWK', 'DOV', 'PPG', 'BDX', 'AFL', 'AOS',
+        'EXPD', 'LEG', 'NDSN', 'PNR',
+        
+        # Financial Aristocrats
+        'BEN', 'TROW', 'SPGI', 'CB', 'AFL',
+        
+        # Healthcare Aristocrats
+        'WBA', 'CAH', 'PFE', 'KMB', 'MDT',
+        
+        # Other Aristocrats
+        'FRT', 'ESS', 'NEE', 'ADP', 'APD', 'ITW', 'GPC', 'EMR',
+        'T', 'VZ', 'ABBV', 'XOM', 'CVX', 'ED'
+    ],
+    
+    # ========================================================================
+    # EXPANSION: ADDITIONAL SECTORS - Tier 2 (40 stocks)
+    # Filling gaps in sector coverage
+    # ========================================================================
+    'additional_coverage': [
+        # Cybersecurity
+        'CYBR', 'TENB', 'SAIL', 'VRNS', 'QLYS', 'RPD',
+        
+        # Cloud Infrastructure
+        'DDOG', 'ESTC', 'GTLB', 'CFLT', 'PATH', 'FROG',
+        
+        # Biotech
+        'MRNA', 'BNTX', 'SGEN', 'BGNE', 'LEGN', 'BMRN',
+        
+        # Aerospace & Defense
+        'AVAV', 'KTOS', 'RKLB', 'ASTS', 'LUNR',
+        
+        # Specialty Finance
+        'MAIN', 'ARCC', 'FSK', 'HTGC', 'OBDC',
+        
+        # Infrastructure
+        'BIP', 'ENB', 'TRP', 'PPL', 'AEE'
     ]
 }
+
 
 def get_premium_universe():
     """Get complete premium quality universe as flat list (~700 stocks)"""

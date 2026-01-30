@@ -1123,9 +1123,11 @@ class AdvancedTradingAnalyzer:
         features['hedge_fund_activity'] = institutional['hedge_fund_activity']
         
         # Economic features (only include when available to avoid synthetic data)
-        vix_val = economic.get('vix', None)
-        if vix_val is not None:
-            features['vix'] = vix_val
+        # Market sentiment contribution (VIX)
+        vix_raw = economic.get('vix') or economic.get('vix_proxy') or economic.get('vix_level')
+        vix_val = float(vix_raw) if (vix_raw is not None and str(vix_raw) != 'N/A') else 18.0
+        
+        features['vix'] = vix_val
         # Include expanded macro context if available (no defaults)
         for k_src, k_dst in [
             ('spy_return_1d', 'macro_spy_return_1d'),
@@ -1344,7 +1346,10 @@ class AdvancedTradingAnalyzer:
             # Risk assessment
             volatility = df['Volatility_20'].iloc[-1] if not pd.isna(df['Volatility_20'].iloc[-1]) else 0.02
             beta = info.get('beta', 1.0) if info.get('beta') else 1.0
-            vix = economic.get('vix', None)
+            
+            # Robust VIX extraction with neutral fallback
+            vix_raw = economic.get('vix') or economic.get('vix_proxy') or economic.get('vix_level')
+            vix = float(vix_raw) if (vix_raw is not None and str(vix_raw) != 'N/A') else 18.0
             
             risk_score = 0
             if vix is not None and (volatility > 0.05 or beta > 2.0 or vix > 30):
@@ -1681,7 +1686,9 @@ class AdvancedTradingAnalyzer:
         try:
             # Base neutral score
             score = 50.0
-            vix_val = economic.get('vix', None)
+            # Robust VIX extraction
+            vix_raw = economic.get('vix') or economic.get('vix_proxy') or economic.get('vix_level')
+            vix_val = float(vix_raw) if (vix_raw is not None and str(vix_raw) != 'N/A') else 18.0
             yield_curve = economic.get('yield_curve_slope', None)
             usd = economic.get('usd_change_1d', None)
             oil = economic.get('oil_change_1d', None)

@@ -114,6 +114,14 @@ class AdvancedDataFetcher:
             except Exception:
                 pass
         
+        # Initialize FRED Macro Analyzer (NEW)
+        self._fred_key = fred_api_key or os.environ.get('FRED_API_KEY')
+        try:
+            from fred_macro_analyzer import FREDMacroAnalyzer
+            self.fred_analyzer = FREDMacroAnalyzer(self._fred_key)
+        except ImportError:
+            self.fred_analyzer = None
+        
     # Cache for market context (SPY/VIX once per run)
         self._market_context_cache = None
         self._market_context_ts = None
@@ -839,17 +847,20 @@ class AdvancedDataFetcher:
             vix_data_source = "default"
             
             # Try sources in order of accuracy (real VIX index first)
+            # Step 1: VIX Indices & Proxies
             vix_sources_priority = [
+                ("FRED_VIX", lambda: self.fred_analyzer.get_vix_from_fred() if self.fred_analyzer else None),
+                ("paid_VIX", lambda: paid_manager.get_stock_data("^VIX", "1mo") if (paid_manager and "^VIX" not in (self.last_run_failures or [])) else None),
                 ("cnbc_vix", _fetch_vix_cnbc),            # Best: actual VIX index
                 ("polygon_vix", _fetch_vix_polygon),      # Paid: actual VIX index
                 ("vixy_estimated", _fetch_vix_from_vixy_apis),  # Fallback: estimated from VIXY
             ]
-
-
             
             for source_name, fetch_func in vix_sources_priority:
                 try:
                     vix_val = fetch_func()
+                    if isinstance(vix_val, pd.DataFrame):
+                        vix_val = float(vix_val['Close'].iloc[-1])
                     if vix_val and 5.0 <= vix_val <= 150.0:
                         vix_proxy = vix_val
                         vix_data_source = source_name
@@ -1032,11 +1043,33 @@ class AdvancedDataFetcher:
             smh_df = _fetch_any(["SMH", "SOXX"])  # Try SMH then SOXX
             semis_spy_ratio_1d = _ratio_change_1d(smh_df, spy_df_for_ratio) if (smh_df is not None and spy_df_for_ratio is not None) else None
 
+            # Final Macro refinement from FRED if available
+            if self.fred_analyzer and self.fred_analyzer.is_configured():
+                try:
+                    fred_summary = self.fred_analyzer.get_macro_summary()
+                    if fred_summary:
+                        # Only overwrite if FRED gave us data
+                        if fred_summary.get('vix') and vix_proxy is None:
+                            vix_proxy = fred_summary['vix']
+                            vix_data_source = "FRED_Summary"
+                        
+                        yc = fred_summary.get('yield_curve', {})
+                        if yc.get('spread') is not None:
+                            yield_curve_slope = yc['spread']
+                            
+                        # Add employment and macro score for advanced consumers
+                        macro_score = fred_summary.get('macro_score')
+                        employment_signal = fred_summary.get('employment', {}).get('signal')
+                except Exception:
+                    pass
+
             ctx = {
                 # Only include computed macro values; None means unavailable
                 'spy_return_1d': spy_return_1d,
                 'spy_vol_20': spy_vol_20,
                 'vix_proxy': vix_proxy,
+                'vix': vix_proxy,  # Duplicated for robustness
+                'vix_level': vix_proxy, # Duplicated for robustness
                 # Sources for explicit logging/diagnostics
                 'spy_source': spy_data_source,
                 'vix_source': vix_data_source,
@@ -1051,6 +1084,8 @@ class AdvancedDataFetcher:
                 'small_large_ratio_1d': small_large_ratio_1d,
                 'xly_xlp_ratio_1d': xly_xlp_ratio_1d,
                 'semis_spy_ratio_1d': semis_spy_ratio_1d,
+                'macro_score': locals().get('macro_score'),
+                'employment_signal': locals().get('employment_signal'),
             }
             self._market_context_cache = ctx
             self._market_context_ts = datetime.now()

@@ -698,7 +698,8 @@ if should_run_analysis:
                     
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("VIX", assessment.get('vix_level', 'N/A'))
+                    vix_val = assessment.get('vix_level') or assessment.get('vix_proxy') or assessment.get('vix')
+                    st.metric("VIX", f"{float(vix_val):.2f}" if (vix_val is not None and str(vix_val) != 'N/A') else "N/A")
                 with col2:
                     spy_ret = assessment.get('spy_return', 0)
                     st.metric("SPY Return", f"{spy_ret*100:+.2f}%" if spy_ret else "N/A")
@@ -984,18 +985,22 @@ if should_run_analysis:
                 </div>
                 """, unsafe_allow_html=True)
             with colD:
-                vix_val = mc.get('vix_proxy')
+                # Robust VIX extraction
+                vix_val = mc.get('vix_proxy') or mc.get('vix') or mc.get('vix_level')
                 curve_slope_val = mc.get('yield_curve_slope')
+                
                 try:
-                    vix_display = f"{float(vix_val):.1f}" if vix_val is not None else "N/A"
-                except Exception:
+                    vix_display = f"{float(vix_val):.1f}" if (vix_val is not None and str(vix_val) != 'N/A') else "N/A"
+                except (ValueError, TypeError):
                     vix_display = "N/A"
+                    
                 try:
-                    curve_display = f"{float(curve_slope_val):+.2f}" if curve_slope_val is not None else "N/A"
-                except Exception:
+                    curve_display = f"{float(curve_slope_val):+.2f}" if (curve_slope_val is not None and str(curve_slope_val) != 'N/A') else "N/A"
+                except (ValueError, TypeError):
                     curve_display = "N/A"
+                    
                 st.markdown(f"""
-                <div class="metric-card">
+                <div class="metric-card" title="VIX Fear Gauge & Yield Curve Slope (10Y-3M)">
                     <h4>VIX • Curve Slope</h4>
                     <div class="price-big">{vix_display} • {curve_display}</div>
                 </div>

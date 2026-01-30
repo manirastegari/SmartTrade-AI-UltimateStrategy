@@ -50,7 +50,7 @@ class MarketTimingSignal:
         
         # Extract market data
         # Extract market data
-        vix = market_context.get('vix_proxy') or market_context.get('vix')
+        vix = market_context.get('vix_proxy') or market_context.get('vix') or market_context.get('vix_level')
         spy_return = market_context.get('spy_return_1d')
         spy_vol = market_context.get('spy_vol_20')
         regime = market_context.get('regime', 'neutral')
@@ -58,8 +58,9 @@ class MarketTimingSignal:
         yield_curve = market_context.get('yield_curve_slope')
         
         # Handle None/Zero values
-        if vix == 0:
-            vix = None
+        # IMPROVEMENT: Use 18.0 as neutral baseline if VIX is missing to avoid extreme bias
+        if vix is None or vix == 0:
+            vix = 18.0
             
         # Analyze each component
         vix_score, vix_signal = self._analyze_vix(vix, trend)
