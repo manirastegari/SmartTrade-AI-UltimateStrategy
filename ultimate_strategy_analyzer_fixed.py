@@ -1873,17 +1873,27 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                 # Find matching consensus pick to reuse calculations if possible, or recalculate
                 match = next((p for p in consensus if p['symbol'] == pick.get('symbol')), None)
                 if match:
-                    # Copy calculated levels
-                    for key in ['buy_price', 'buy_zone', 'stop_loss', 'take_profit', 'risk_reward']:
-                        if key in match:
+                    # Copy calculated levels AND critical data fields for Excel
+                    for key in ['buy_price', 'buy_zone', 'stop_loss', 'take_profit', 'risk_reward',
+                                'current_price', 'confidence', 'quality_score', 'sector', 'volatility']:
+                        if key in match and not pick.get(key):
                             pick[key] = match[key]
+                    # Convert confidence from 0-1 to 0-100 if needed
+                    conf = pick.get('confidence', 0)
+                    if isinstance(conf, float) and conf <= 1.0:
+                        pick['confidence'] = int(conf * 100)
                 else:
                     # Recalculate if not in consensus (rare)
-                    # We might need price/volatility which might be missing in simple AI pick dict
-                    # Try to find in all results
                     full_data = self.base_results.get(pick.get('symbol'), {})
                     if full_data:
-                        # Create a temporary enriched dict for calculation
+                        # Backfill core fields from base results
+                        if not pick.get('current_price'):
+                            pick['current_price'] = full_data.get('current_price', 0)
+                        if not pick.get('quality_score'):
+                            pick['quality_score'] = full_data.get('quality_score', 0)
+                        if not pick.get('sector'):
+                            pick['sector'] = full_data.get('sector', 'Unknown')
+                        # Create a temporary enriched dict for trade level calculation
                         temp_pick = dict(pick)
                         temp_pick.update(full_data)
                         levels = self._calculate_trade_levels(temp_pick)

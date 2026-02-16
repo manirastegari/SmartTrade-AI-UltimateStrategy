@@ -77,17 +77,23 @@ Use "Chain of Thought" reasoning: Debate the pros/cons of each candidate against
             "symbol": "AAPL",
             "rank": 1,
             "ai_score": 96,
-            "macro_fit": "High/Neutral/Low",
+            "confidence": 92,
+            "macro_fit": "High",
             "why_selected": "Strong fundamentals + ML confirms. Cash pile offsets yield risk.",
             "action": "STRONG BUY",
             "position_size": "Large",
             "entry_timing": "Immediate"
-        }},
-        ...
+        }}
     ],
     "brief_summary": "2-3 sentences summarizing the strategy for today.",
     "key_insight": "The 'Alpha' insight (e.g. 'Market is ignoring X...')"
 }}
+
+IMPORTANT RULES:
+- "ai_score" must be an integer 0-100 representing your conviction.
+- "confidence" must be an integer 0-100 representing overall confidence of this pick.
+- "macro_fit" must be exactly one of: "High", "Neutral", "Low".
+- You MUST return valid JSON only, no extra text.
 """
 
             response = client.chat(
@@ -105,6 +111,36 @@ Use "Chain of Thought" reasoning: Debate the pros/cons of each candidate against
             
             # Inject reasoning trace if available
             reasoning_trace = parsed.get('reasoning_trace', 'No trace provided.')
+
+            # CRITICAL FIX: Backfill current_price, confidence, quality_score from consensus data
+            # The AI prompt does NOT have access to prices — only quant scores.
+            consensus_lookup = {p.get('symbol'): p for p in consensus_picks}
+            for ai_pick in top_picks_raw:
+                sym = ai_pick.get('symbol')
+                match = consensus_lookup.get(sym, {})
+                # Backfill price and quality data AI cannot know
+                if not ai_pick.get('current_price'):
+                    ai_pick['current_price'] = match.get('current_price', 0)
+                if not ai_pick.get('quality_score'):
+                    ai_pick['quality_score'] = match.get('quality_score', 0)
+                # Ensure confidence is int 0-100 (AI may return it, or we use consensus)
+                raw_conf = ai_pick.get('confidence')
+                if raw_conf is not None:
+                    ai_pick['confidence'] = int(float(raw_conf)) if float(raw_conf) <= 100 else int(float(raw_conf))
+                else:
+                    # Derive from consensus confidence (0-1 scale → 0-100)
+                    ai_pick['confidence'] = int(match.get('confidence', 0) * 100)
+                # Ensure ai_score is numeric
+                raw_score = ai_pick.get('ai_score', 0)
+                try:
+                    ai_pick['ai_score'] = float(raw_score)
+                except (ValueError, TypeError):
+                    ai_pick['ai_score'] = 0.0
+                # Backfill buy_zone / take_profit from consensus trade levels
+                if not ai_pick.get('buy_zone') and match.get('buy_zone'):
+                    ai_pick['buy_zone'] = match['buy_zone']
+                if not ai_pick.get('take_profit') and match.get('take_profit'):
+                    ai_pick['take_profit'] = match['take_profit']
 
             return {
                 'ai_top_picks': top_picks_raw[:max_picks],

@@ -572,18 +572,33 @@ def create_ai_top_picks_sheet(ai_top_picks, writer):
         for pick in picks: # Changed picks_list to picks
             current_price = pick.get('current_price', 0)
             # Calculate Buy Zone and Take Profit if not present
-            buy_zone = pick.get('buy_zone', f"${current_price:.2f} - ${current_price*1.02:.2f}")
-            take_profit = pick.get('take_profit', f"${current_price*1.15:.2f} (+15%)")
+            if current_price and current_price > 0:
+                buy_zone = pick.get('buy_zone', f"${current_price:.2f} - ${current_price*1.02:.2f}")
+                take_profit = pick.get('take_profit', f"${current_price*1.15:.2f} (+15%)")
+                price_display = f"${current_price:.2f}"
+            else:
+                buy_zone = pick.get('buy_zone', 'N/A')
+                take_profit = pick.get('take_profit', 'N/A')
+                price_display = 'N/A'
+            
+            # Robust confidence parsing: handle int, float (0-1 or 0-100), or string
+            raw_conf = pick.get('confidence', 0)
+            try:
+                conf_val = float(str(raw_conf).replace('%', ''))
+                if conf_val <= 1.0 and conf_val > 0:
+                    conf_val = int(conf_val * 100)  # Convert 0-1 scale to percentage
+                else:
+                    conf_val = int(conf_val)
+            except (ValueError, TypeError):
+                conf_val = 0
             
             data.append({
                 'Rank': _clean_val(pick.get('rank', 0)),
                 'Symbol': _clean_val(pick.get('symbol', 'N/A')),
-                # 'Name': pick.get('name', 'N/A'), # Removed as per user request
-                # 'Sector': pick.get('sector', 'N/A'), # Removed as per user request
-                'Current Price': _clean_val(current_price),
+                'Current Price': _clean_val(price_display),
                 'Buy Zone': _clean_val(buy_zone),
                 'Take Profit': _clean_val(take_profit),
-                'AI Confidence': _clean_val(f"{pick.get('confidence', 0)}%"),
+                'AI Confidence': _clean_val(f"{conf_val}%"),
                 'Macro Fit': _clean_val(pick.get('macro_fit', 'N/A')),
                 'Reasoning': _clean_val(pick.get('reasoning', '') or pick.get('why_selected', ''))
             })
