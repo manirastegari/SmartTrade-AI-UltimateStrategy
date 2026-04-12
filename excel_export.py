@@ -109,13 +109,22 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         # Create Excel writer object
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             
-            # Sheet 1: Summary Dashboard
             # Safe sheet creation wrapper
             def safe_create(func, *args, **kwargs):
                 try:
                     func(*args, **kwargs)
                 except Exception as e:
                     print(f"⚠️ Error creating sheet: {str(e)}")
+
+            # Sheet 0: EXECUTIVE SUMMARY (NEW - plain English actionable guidance)
+            safe_create(create_executive_summary_sheet,
+                results,
+                writer,
+                market_tradability=market_tradability,
+                market_timing_signal=market_timing_signal,
+                day_assessment=day_assessment,
+                ai_top_picks=ai_top_picks
+            )
 
             # Sheet 1: Summary Dashboard
             safe_create(create_summary_sheet,
@@ -178,6 +187,148 @@ def export_analysis_to_excel(results, analysis_params=None, filename=None, auto_
         
     except Exception as e:
         return None, f"Export failed: {str(e)}"
+
+def create_executive_summary_sheet(results, writer, market_tradability=None, market_timing_signal=None, day_assessment=None, ai_top_picks=None):
+    """Create Executive Summary sheet - plain English actionable guidance as the first thing the user sees."""
+    
+    rows = []
+    rows.append({'Section': 'SMARTTRADE AI - EXECUTIVE SUMMARY', 'Details': datetime.now().strftime('%Y-%m-%d %H:%M')})
+    rows.append({'Section': '', 'Details': ''})
+    
+    # Market Assessment
+    rows.append({'Section': '=== MARKET ASSESSMENT ===', 'Details': ''})
+    
+    if day_assessment:
+        skip = day_assessment.get('skip_today', False)
+        warning = day_assessment.get('warning_level', 'GREEN')
+        if skip or warning == 'RED':
+            rows.append({'Section': 'TODAY\'S VERDICT', 'Details': 'SKIP - Market conditions unfavorable. Wait for better entry.'})
+        elif warning == 'YELLOW':
+            rows.append({'Section': 'TODAY\'S VERDICT', 'Details': 'CAUTION - Proceed with half positions only.'})
+        else:
+            rows.append({'Section': 'TODAY\'S VERDICT', 'Details': 'FAVORABLE - Good conditions for trading.'})
+        rows.append({'Section': 'Assessment', 'Details': _clean_val(day_assessment.get('honest_assessment', 'N/A'))})
+        rows.append({'Section': 'Position Sizing', 'Details': _clean_val(day_assessment.get('position_sizing', 'Standard'))})
+    
+    if market_timing_signal:
+        action = market_timing_signal.get('action', 'WAIT')
+        confidence = market_timing_signal.get('confidence', 'N/A')
+        rows.append({'Section': 'Market Timing Signal', 'Details': f"{action} (Confidence: {confidence}%)"})
+    
+    if market_tradability:
+        rec = market_tradability.get('trade_recommendation', 'N/A')
+        conf = market_tradability.get('confidence', 0)
+        rows.append({'Section': 'AI Trade Recommendation', 'Details': f"{rec} (Confidence: {conf}%)"})
+        rows.append({'Section': 'AI Brief', 'Details': _clean_val(market_tradability.get('brief_summary', ''))})
+    
+    rows.append({'Section': '', 'Details': ''})
+    
+    # Top Action Items
+    rows.append({'Section': '=== TOP ACTION ITEMS ===', 'Details': ''})
+    
+    if results:
+        # Separate by tier using new consensus format
+        tier_5 = [r for r in results if r.get('strategies_agreeing', 0) == 5]
+        tier_4 = [r for r in results if r.get('strategies_agreeing', 0) == 4]
+        # Fallback for old format
+        if not tier_5 and not tier_4:
+            tier_5 = [r for r in results if str(r.get('recommendation', '')).upper() == 'ULTIMATE BUY']
+            tier_4 = [r for r in results if str(r.get('recommendation', '')).upper() == 'STRONG BUY']
+        
+        top_picks = (tier_5 + tier_4)[:10]
+        
+        if top_picks:
+            for i, pick in enumerate(top_picks, 1):
+                symbol = pick.get('symbol', 'N/A')
+                price = pick.get('current_price', 0)
+                buy = pick.get('buy_price', price)
+                stop = pick.get('stop_loss', 0)
+                target = pick.get('take_profit', 0)
+                rr = pick.get('risk_reward_ratio', 0)
+                sector = pick.get('sector', 'N/A')
+                agreement = pick.get('strategies_agreeing', 0)
+                rec = pick.get('recommendation', 'N/A')
+                quality = pick.get('quality_score', 0)
+                earnings_risk = pick.get('earnings_risk', '')
+                
+                action_line = f"#{i} {symbol} ({sector}) - {rec} ({agreement}/5 agree)"
+                detail_parts = [f"Quality: {quality}/100"]
+                detail_parts.append(f"Price: ${price:.2f}")
+                if buy:
+                    detail_parts.append(f"Buy at: ${float(buy):.2f}")
+                if stop:
+                    detail_parts.append(f"Stop: ${float(stop):.2f}")
+                if target:
+                    detail_parts.append(f"Target: ${float(target):.2f}")
+                if rr:
+                    detail_parts.append(f"R:R {float(rr):.1f}:1")
+                if earnings_risk in ('HIGH', 'MEDIUM'):
+                    detail_parts.append(f"EARNINGS WARNING: {pick.get('earnings_date', 'soon')}")
+                
+                rows.append({'Section': action_line, 'Details': ' | '.join(detail_parts)})
+        else:
+            rows.append({'Section': 'No high-conviction picks found', 'Details': 'Consider waiting for better market conditions'})
+    
+    rows.append({'Section': '', 'Details': ''})
+    
+    # AI Top Picks
+    if ai_top_picks and ai_top_picks.get('ai_top_picks'):
+        rows.append({'Section': '=== AI TOP PICKS (Grok Analysis) ===', 'Details': ''})
+        rows.append({'Section': 'Key Insight', 'Details': _clean_val(ai_top_picks.get('key_insight', ''))})
+        for pick in ai_top_picks.get('ai_top_picks', [])[:5]:
+            symbol = pick.get('symbol', 'N/A')
+            action = pick.get('action', 'N/A')
+            why = _clean_val(pick.get('why_selected', ''))
+            entry = pick.get('entry_timing', 'N/A')
+            pos = pick.get('position_size', 'N/A')
+            rows.append({'Section': f"  AI #{pick.get('rank', '?')}: {symbol} - {action}", 'Details': f"{why} | Entry: {entry} | Size: {pos}"})
+        rows.append({'Section': '', 'Details': ''})
+    
+    # Risk Warnings
+    rows.append({'Section': '=== RISK WARNINGS ===', 'Details': ''})
+    if results:
+        earnings_warnings = [r for r in results if r.get('earnings_risk') in ('HIGH', 'MEDIUM') and r.get('strategies_agreeing', 0) >= 3]
+        if earnings_warnings:
+            for ew in earnings_warnings[:5]:
+                rows.append({'Section': f"  Earnings: {ew['symbol']}", 'Details': f"Date: {ew.get('earnings_date', 'N/A')} | Risk: {ew.get('earnings_risk', 'N/A')} - Consider waiting until after earnings"})
+        else:
+            rows.append({'Section': 'No imminent earnings risks', 'Details': 'Top picks clear of near-term earnings volatility'})
+        
+        concentrated = [r for r in results if r.get('sector_concentrated')]
+        if concentrated:
+            rows.append({'Section': 'Sector Concentration Warning', 'Details': f"{len(concentrated)} picks flagged for sector over-concentration"})
+    
+    rows.append({'Section': '', 'Details': ''})
+    rows.append({'Section': 'DISCLAIMER', 'Details': 'This is AI-generated analysis for informational purposes only. Not financial advice. Always do your own due diligence before trading.'})
+    
+    df = pd.DataFrame(rows)
+    df.to_excel(writer, sheet_name='Executive Summary', index=False)
+    
+    # Format the sheet
+    ws = writer.sheets['Executive Summary']
+    ws.column_dimensions['A'].width = 50
+    ws.column_dimensions['B'].width = 100
+    
+    # Bold section headers
+    from openpyxl.styles import Font, PatternFill, Alignment
+    for row_idx, row_data in enumerate(rows, 2):  # Excel rows start at 2 (after header)
+        cell_a = ws.cell(row=row_idx, column=1)
+        if row_data['Section'].startswith('==='):
+            cell_a.font = Font(bold=True, size=12, color='FFFFFF')
+            cell_a.fill = PatternFill(start_color='2F5496', end_color='2F5496', fill_type='solid')
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.fill = PatternFill(start_color='2F5496', end_color='2F5496', fill_type='solid')
+        elif row_data['Section'].startswith('#'):
+            cell_a.font = Font(bold=True, size=11)
+        elif 'VERDICT' in row_data['Section']:
+            cell_a.font = Font(bold=True, size=13, color='C00000')
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.font = Font(bold=True, size=13, color='C00000')
+        elif row_data['Section'] == 'DISCLAIMER':
+            cell_a.font = Font(italic=True, size=9, color='808080')
+            cell_b = ws.cell(row=row_idx, column=2)
+            cell_b.font = Font(italic=True, size=9, color='808080')
+
 
 def create_summary_sheet(results, writer, analysis_params, all_stocks_count=None, market_tradability=None, market_timing_signal=None, ai_top_picks=None, analysis_start_time=None, analysis_end_time=None, analysis_duration_minutes=None, ai_universe_context=None, day_assessment=None):
     """Create summary dashboard sheet
@@ -495,7 +646,14 @@ def create_all_analyzed_sheet(all_stocks_data, writer):
             'Support Level': _clean_val(stock.get('support_level')),
             'Resistance Level': _clean_val(stock.get('resistance_level')),
             'Volume SMA': _clean_val(stock.get('volume_sma')),
+            'MFI': _clean_val(stock.get('technical', {}).get('mfi') if isinstance(stock.get('technical'), dict) else stock.get('mfi')),
+            'MFI Signal': _clean_val(stock.get('technical', {}).get('mfi_signal', 'N/A') if isinstance(stock.get('technical'), dict) else 'N/A'),
             'Technical Score': _clean_val(stock.get('technical_score')),
+            
+            # Earnings Calendar (NEW)
+            'Earnings Date': _clean_val(stock.get('earnings_date', '')),
+            'Days to Earnings': _clean_val(stock.get('days_until_earnings', '')),
+            'Earnings Risk': _clean_val(stock.get('earnings_risk', 'UNKNOWN')),
             
             # Sentiment
             'Sentiment Score': _clean_val(stock.get('sentiment_score')),

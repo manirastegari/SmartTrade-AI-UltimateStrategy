@@ -9,7 +9,7 @@ Usage:
 
 Notes:
 - Reads API key from env var XAI_API_KEY or api_keys.XAI_API_KEY if present.
-- Defaults model to 'grok-4-1-fast-reasoning' (latest fast reasoning tier). Override via XAI_MODEL.
+- Defaults model to 'grok-4' (latest flagship model for maximum accuracy). Override via XAI_MODEL.
 - Returns a structured dict suitable for UI and Excel export.
 """
 
@@ -22,11 +22,12 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-DEFAULT_PRIMARY_MODEL = "grok-4-1-fast-reasoning"
-DEFAULT_FALLBACK_MODEL = "grok-4-1-fast-non-reasoning"
+DEFAULT_PRIMARY_MODEL = "grok-4"
+DEFAULT_FALLBACK_MODEL = "grok-4-1-fast-reasoning"
 MODEL_FALLBACKS = {
 	DEFAULT_PRIMARY_MODEL: DEFAULT_FALLBACK_MODEL,
-	DEFAULT_FALLBACK_MODEL: "grok-4-fast-non-reasoning",
+	DEFAULT_FALLBACK_MODEL: "grok-4-1-fast-non-reasoning",
+	"grok-4-1-fast-non-reasoning": "grok-4-fast-non-reasoning",
 	"grok-4-fast-reasoning": "grok-4-fast-non-reasoning",
 }
 
@@ -52,7 +53,7 @@ class XAIClient:
 				key = None
 
 		self.api_key = key
-		# Default to a strong and cost-effective model per your guidance
+		# Default to grok-4 (latest flagship) for maximum analysis accuracy
 		self.model = model or os.getenv("XAI_MODEL", DEFAULT_PRIMARY_MODEL)
 		self.fallback_model = os.getenv("XAI_FALLBACK_MODEL") or MODEL_FALLBACKS.get(self.model)
 		# xAI typically uses an OpenAI-compatible endpoint path

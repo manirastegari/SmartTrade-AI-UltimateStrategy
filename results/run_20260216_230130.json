@@ -1,0 +1,31 @@
+{
+  "run_date": "2026-02-16",
+  "run_timestamp": "2026-02-16T00:00:00",
+  "elapsed_minutes": 0,
+  "total_analyzed": 614,
+  "consensus_count": 0,
+  "tier_5_count": 0,
+  "tier_4_count": 0,
+  "tier_3_count": 0,
+  "market_timing": {
+    "signal": "N/A",
+    "action": "N/A",
+    "confidence": 0,
+    "position_sizing": "N/A",
+    "vix_level": null,
+    "market_regime": "N/A",
+    "reason": "Historical report \u2014 no JSON data available"
+  },
+  "ai_tradability": {
+    "recommendation": "N/A",
+    "confidence": 0,
+    "summary": "Historical report"
+  },
+  "ai_top_picks": [],
+  "ai_key_insight": "",
+  "ai_reasoning_trace": "",
+  "tier_5_picks": [],
+  "tier_4_picks": [],
+  "tier_3_picks": [],
+  "excel_file": "report_20260216_230130.xlsx"
+}

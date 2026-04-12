@@ -407,6 +407,9 @@ class FixedUltimateStrategyAnalyzer:
             consensus_picks, market_analysis
         )
         
+        # STEP 6.25: SECTOR CONCENTRATION LIMIT (NEW - risk reduction)
+        consensus_picks = self._apply_sector_diversification(consensus_picks, max_sector_pct=0.35)
+        
         # STEP 6.5: AI Pick Validation (NEW - Critical!)
         pick_validation = {}
         if self.ai_validator and self.ai_validator.enabled and consensus_picks:
@@ -1505,6 +1508,64 @@ class FixedUltimateStrategyAnalyzer:
                 'action': 'Watch'
             }
     
+    def _apply_sector_diversification(self, consensus_picks: List[Dict], max_sector_pct: float = 0.35) -> List[Dict]:
+        """
+        Apply sector concentration limit to reduce portfolio risk.
+        Flags/downgrades lower-tier picks when a sector exceeds max_sector_pct.
+        Higher-tier picks (4/5, 5/5) are never removed, only lower-tier ones.
+        """
+        if not consensus_picks or len(consensus_picks) < 5:
+            return consensus_picks
+        
+        total = len(consensus_picks)
+        max_per_sector = max(3, int(total * max_sector_pct))  # At least 3 per sector
+        
+        # Count picks per sector
+        sector_counts = defaultdict(int)
+        for pick in consensus_picks:
+            sector = pick.get('sector', 'Unknown')
+            sector_counts[sector] += 1
+        
+        # Find over-concentrated sectors
+        over_concentrated = {s: c for s, c in sector_counts.items() if c > max_per_sector}
+        
+        if not over_concentrated:
+            return consensus_picks
+        
+        print(f"\n🔄 SECTOR DIVERSIFICATION (max {max_sector_pct:.0%} per sector, cap={max_per_sector}):")
+        for sector, count in over_concentrated.items():
+            print(f"   ⚠️ {sector}: {count} picks (over limit by {count - max_per_sector})")
+        
+        # Keep high-tier picks, flag/penalize excess low-tier ones
+        result = []
+        sector_accepted = defaultdict(int)
+        
+        # Sort: highest tier first, then by quality score
+        sorted_picks = sorted(consensus_picks, key=lambda x: (x.get('strategies_agreeing', 0), x.get('quality_score', 0)), reverse=True)
+        
+        for pick in sorted_picks:
+            sector = pick.get('sector', 'Unknown')
+            if sector_accepted[sector] < max_per_sector:
+                sector_accepted[sector] += 1
+                result.append(pick)
+            else:
+                # Over limit: keep but flag as sector-concentrated
+                pick['sector_concentrated'] = True
+                pick['sector_diversification_note'] = f'Sector {sector} over-represented ({sector_counts[sector]} picks)'
+                # Only exclude 2/5 tier picks from over-concentrated sectors
+                if pick.get('strategies_agreeing', 0) <= 2:
+                    print(f"   Excluded {pick['symbol']} (2/5 tier, {sector} over-concentrated)")
+                    continue
+                result.append(pick)
+        
+        excluded = len(consensus_picks) - len(result)
+        if excluded > 0:
+            print(f"   Removed {excluded} low-tier picks from over-concentrated sectors")
+        
+        # Re-sort back to standard ordering
+        result.sort(key=lambda x: (x.get('strategies_agreeing', 0), x.get('consensus_score', 0)), reverse=True)
+        return result
+
     def _apply_regime_filters(self, consensus_list: List[Dict], market_ctx: Dict) -> tuple:
         """
         Apply RELAXED regime filters for premium universe
@@ -1619,19 +1680,46 @@ class FixedUltimateStrategyAnalyzer:
         avg_ml_prob = np.mean([p.get('ml_probability', 0) for p in tier_5 if p.get('ml_probability') is not None]) if ml_available_count > 0 else 0
         avg_ml_return = np.mean([p.get('ml_expected_return', 0) for p in tier_5 if p.get('ml_expected_return') is not None]) if ml_available_count > 0 else 0
         
+        # Compute VIX context
+        vix_val = market.get('vix', 15)
+        try:
+            vix_num = float(vix_val) if vix_val is not None else 15
+        except (TypeError, ValueError):
+            vix_num = 15
+        vix_zone = 'Low (Complacent)' if vix_num < 15 else 'Normal' if vix_num < 20 else 'Elevated (Caution)' if vix_num < 25 else 'High (Fear)' if vix_num < 30 else 'Extreme (Panic)'
+        
+        # Gather earnings flags for top picks
+        earnings_flags = []
+        for pick in tier_5:
+            er = pick.get('earnings_risk', 'UNKNOWN')
+            ed = pick.get('earnings_date')
+            if er in ('HIGH', 'MEDIUM') and ed:
+                earnings_flags.append(f"{pick['symbol']}: earnings {ed} (risk: {er})")
+        
+        # Sector distribution of picks
+        sector_dist = defaultdict(int)
+        for pick in tier_5 + tier_4:
+            sector_dist[pick.get('sector', 'Unknown')] += 1
+        sector_summary = ', '.join([f"{s}: {c}" for s, c in sorted(sector_dist.items(), key=lambda x: -x[1])[:5]])
+        
         prompt = f"""Analyze these premium quality stock recommendations from an AI-enhanced 5-strategy consensus system.
 
 **ANALYSIS METHODOLOGY:**
 This analysis combines THREE layers:
-1. Quant Engine: 15 quality metrics (fundamentals, momentum, risk, technical, sentiment)
+1. Quant Engine: 15 quality metrics + MFI (Money Flow Index) + earnings calendar awareness
 2. 5-Perspective Consensus: Institutional, Hedge Fund, Quant Value, Risk-Managed, Investment Bank strategies  
 3. ML Ensemble: 6 models (LightGBM, XGBoost, CatBoost, RF, GB, Neural Net) with 30 features
 
 **MARKET CONTEXT:**
 - Regime: {market.get('regime', 'Unknown')}
-- VIX: {market.get('vix', 'N/A')} ({['Low', 'Normal', 'Elevated', 'High'][min(3, int(market.get('vix', 15) / 15))]} volatility)
+- VIX: {vix_num:.1f} ({vix_zone})
 - Trend: {market.get('trend', 'Unknown')}
 - Status: {market.get('status', 'Unknown')}
+- Macro Score: {market.get('macro_score', 'N/A')}
+- Macro Regime: {market.get('macro_regime', 'N/A')}
+
+**SECTOR DISTRIBUTION:** {sector_summary}
+{"**⚠️ EARNINGS WARNINGS:** " + "; ".join(earnings_flags) if earnings_flags else "**EARNINGS:** No imminent earnings in top picks"}
 
 **PORTFOLIO-LEVEL ML INSIGHTS:**
 - ML-Enhanced Picks: {ml_available_count}/{len(tier_5)}
@@ -1666,12 +1754,16 @@ This analysis combines THREE layers:
 - Ultimate Score: {ultimate_score:.1f}/100 (40% Quality + 30% Consensus + 30% ML)
 """
             
+            tech = pick.get('technical', {})
+            earnings_note = f" | ⚠️ Earnings: {pick.get('earnings_date', 'N/A')} (risk: {pick.get('earnings_risk', 'N/A')})" if pick.get('earnings_risk') in ('HIGH', 'MEDIUM') else ""
+            mfi_note = f", MFI: {tech.get('mfi', 'N/A')} ({tech.get('mfi_signal', 'N/A')})" if tech.get('mfi') else ""
+            
             prompt += f"""
 {symbol}: Quality Score {pick['quality_score']}/100
 - Fundamentals: {fund.get('grade', 'N/A')} (P/E: {fund.get('pe_ratio', 'N/A')}, Revenue Growth: {fund.get('revenue_growth', 'N/A')}%, Margin: {fund.get('profit_margin', 'N/A')}%)
-- Momentum: {mom.get('grade', 'N/A')} (Trend: {mom.get('price_trend', 'N/A')}, RSI: {mom.get('rsi', 'N/A')})
+- Momentum: {mom.get('grade', 'N/A')} (Trend: {mom.get('price_trend', 'N/A')}, RSI: {mom.get('rsi', 'N/A')}{mfi_note})
 - Risk: {risk.get('grade', 'N/A')} ({risk.get('risk_level', 'N/A')} - Beta: {risk.get('beta', 'N/A')})
-{ml_section}- Price: ${pick.get('current_price', 0):.2f}
+{ml_section}- Price: ${pick.get('current_price', 0):.2f}{earnings_note}
 """
         
         if tier_4:
@@ -1843,13 +1935,15 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             else:
                 take_profit = min_target
                 
+            rr = round((take_profit - buy_price) / (buy_price - stop_loss), 2) if buy_price > stop_loss else 0
             # Formatting
             return {
                 'buy_price': round(buy_price, 2),
                 'buy_zone': f"${buy_range_low:.2f} - ${buy_range_high:.2f}",
                 'stop_loss': round(stop_loss, 2),
                 'take_profit': round(take_profit, 2),
-                'risk_reward': round((take_profit - buy_price) / (buy_price - stop_loss), 2) if buy_price > stop_loss else 0
+                'risk_reward': rr,
+                'risk_reward_ratio': rr,  # Alias for UI compatibility
             }
         except Exception:
             return {}
@@ -1862,10 +1956,20 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
         start_time = getattr(self, 'analysis_start_time', end_time)
         duration = (end_time - start_time).total_seconds() / 60
         
-        # Inject Trade Levels into Consensus Picks
+        # Inject Trade Levels + earnings/MFI data into Consensus Picks
         for pick in consensus:
             levels = self._calculate_trade_levels(pick)
             pick.update(levels)
+            
+            # Backfill earnings data and MFI from base results if missing
+            base = self.base_results.get(pick.get('symbol'), {})
+            if base:
+                if not pick.get('earnings_date'):
+                    pick['earnings_date'] = base.get('earnings_date')
+                    pick['days_until_earnings'] = base.get('days_until_earnings')
+                    pick['earnings_risk'] = base.get('earnings_risk', 'UNKNOWN')
+                if not pick.get('technical'):
+                    pick['technical'] = base.get('technical', {})
 
         # Inject Trade Levels into AI Top Picks (if they exist)
         if ai_top_picks and 'ai_top_picks' in ai_top_picks:
@@ -1874,8 +1978,9 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                 match = next((p for p in consensus if p['symbol'] == pick.get('symbol')), None)
                 if match:
                     # Copy calculated levels AND critical data fields for Excel
-                    for key in ['buy_price', 'buy_zone', 'stop_loss', 'take_profit', 'risk_reward',
-                                'current_price', 'confidence', 'quality_score', 'sector', 'volatility']:
+                    for key in ['buy_price', 'buy_zone', 'stop_loss', 'take_profit', 'risk_reward', 'risk_reward_ratio',
+                                'current_price', 'confidence', 'quality_score', 'sector', 'volatility',
+                                'earnings_date', 'days_until_earnings', 'earnings_risk']:
                         if key in match and not pick.get(key):
                             pick[key] = match[key]
                     # Convert confidence from 0-1 to 0-100 if needed
@@ -2505,6 +2610,20 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             if quick_signals:
                 st.info(" • ".join(quick_signals[:4]))
         
+        # Sector Distribution Chart (NEW - portfolio diversification view)
+        sector_dist = defaultdict(int)
+        for pick in consensus:
+            sector_dist[pick.get('sector', 'Unknown')] += 1
+        if sector_dist:
+            st.markdown("### 📊 Sector Distribution of Consensus Picks")
+            import plotly.express as px
+            sector_df = pd.DataFrame([{'Sector': s, 'Count': c} for s, c in sorted(sector_dist.items(), key=lambda x: -x[1])])
+            fig = px.pie(sector_df, values='Count', names='Sector', title='Portfolio Sector Allocation',
+                        color_discrete_sequence=px.colors.qualitative.Set3)
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            fig.update_layout(height=350, margin=dict(t=40, b=20, l=20, r=20))
+            st.plotly_chart(fig, use_container_width=True)
+        
         # 5/5 Agreement (ULTIMATE BUY)
         tier_5 = [p for p in consensus if p['strategies_agreeing'] == 5]
         if tier_5:
@@ -2512,11 +2631,18 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             st.markdown(f"*All 5 investment perspectives agree on these {len(tier_5)} stocks*")
             
             for pick in tier_5[:10]:  # Show top 10
-                with st.expander(f"**{pick['symbol']}** - Quality Score: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f}"):
-                    col1, col2 = st.columns(2)
+                # Earnings warning prefix
+                earnings_prefix = ""
+                if pick.get('earnings_risk') == 'HIGH':
+                    earnings_prefix = "⚠️ EARNINGS SOON | "
+                elif pick.get('earnings_risk') == 'MEDIUM':
+                    earnings_prefix = "📅 Earnings Near | "
+                
+                with st.expander(f"**{pick['symbol']}** - {earnings_prefix}Quality: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f} | {pick.get('sector', 'N/A')}"):
+                    col1, col2, col3 = st.columns([2, 2, 2])
                     
                     with col1:
-                        st.markdown("**Quality Breakdown:**")
+                        st.markdown("**📊 Quality Breakdown:**")
                         fund = pick.get('fundamentals', {})
                         mom = pick.get('momentum', {})
                         st.markdown(f"- Fundamentals: **{fund.get('grade', 'N/A')}** ({fund.get('score', 0):.0f}/100)")
@@ -2525,9 +2651,41 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                         st.markdown(f"- Risk: **{risk.get('grade', 'N/A')}** ({risk.get('score', 0):.0f}/100)")
                         sent = pick.get('sentiment', {})
                         st.markdown(f"- Sentiment: **{sent.get('grade', 'N/A')}** ({sent.get('score', 0):.0f}/100)")
+                        
+                        # MFI signal (NEW)
+                        tech = pick.get('technical', {})
+                        mfi = tech.get('mfi')
+                        if mfi is not None:
+                            mfi_signal = tech.get('mfi_signal', 'NEUTRAL')
+                            mfi_color = '🟢' if mfi_signal == 'OVERSOLD' else '🔴' if mfi_signal == 'OVERBOUGHT' else '⚪'
+                            st.markdown(f"- MFI: **{mfi:.0f}** {mfi_color} {mfi_signal}")
                     
                     with col2:
-                        st.markdown("**Consensus Details:**")
+                        st.markdown("**🎯 Trade Levels:**")
+                        buy_price = pick.get('buy_price')
+                        stop_loss = pick.get('stop_loss')
+                        take_profit = pick.get('take_profit')
+                        rr_ratio = pick.get('risk_reward_ratio')
+                        
+                        if buy_price:
+                            st.markdown(f"- 🟢 Buy: **${buy_price:.2f}**")
+                        if stop_loss:
+                            st.markdown(f"- 🔴 Stop Loss: **${stop_loss:.2f}**")
+                        if take_profit:
+                            st.markdown(f"- 🎯 Take Profit: **${take_profit:.2f}**")
+                        if rr_ratio:
+                            rr_color = '🟢' if rr_ratio >= 2.0 else '🟡' if rr_ratio >= 1.5 else '🔴'
+                            st.markdown(f"- {rr_color} Risk/Reward: **{rr_ratio:.1f}:1**")
+                        
+                        # Earnings calendar (NEW)
+                        if pick.get('earnings_date'):
+                            days = pick.get('days_until_earnings')
+                            er = pick.get('earnings_risk', 'UNKNOWN')
+                            er_emoji = '🔴' if er == 'HIGH' else '🟡' if er == 'MEDIUM' else '🟢'
+                            st.markdown(f"- {er_emoji} Earnings: **{pick['earnings_date']}** ({days}d)")
+                    
+                    with col3:
+                        st.markdown("**🤝 Consensus Details:**")
                         st.markdown(f"- Recommendation: **{pick['recommendation']}**")
                         st.markdown(f"- Confidence: **{pick['confidence']*100:.0f}%**")
                         st.markdown(f"- Consensus Score: **{pick['consensus_score']}/100**")
@@ -2568,11 +2726,17 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             st.markdown(f"*4 out of 5 perspectives agree on these {len(tier_4)} stocks*")
             
             for pick in tier_4[:10]:  # Show top 10
-                with st.expander(f"**{pick['symbol']}** - Quality Score: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f}"):
-                    col1, col2 = st.columns(2)
+                earnings_prefix = ""
+                if pick.get('earnings_risk') == 'HIGH':
+                    earnings_prefix = "⚠️ EARNINGS SOON | "
+                elif pick.get('earnings_risk') == 'MEDIUM':
+                    earnings_prefix = "📅 Earnings Near | "
+                
+                with st.expander(f"**{pick['symbol']}** - {earnings_prefix}Quality: {pick['quality_score']}/100 | ${pick.get('current_price', 0):.2f} | {pick.get('sector', 'N/A')}"):
+                    col1, col2, col3 = st.columns([2, 2, 2])
                     
                     with col1:
-                        st.markdown("**Quality Breakdown:**")
+                        st.markdown("**📊 Quality Breakdown:**")
                         fund = pick.get('fundamentals', {})
                         mom = pick.get('momentum', {})
                         st.markdown(f"- Fundamentals: **{fund.get('grade', 'N/A')}** ({fund.get('score', 0):.0f}/100)")
@@ -2581,9 +2745,36 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
                         st.markdown(f"- Risk: **{risk.get('grade', 'N/A')}** ({risk.get('score', 0):.0f}/100)")
                         sent = pick.get('sentiment', {})
                         st.markdown(f"- Sentiment: **{sent.get('grade', 'N/A')}** ({sent.get('score', 0):.0f}/100)")
+                        tech = pick.get('technical', {})
+                        mfi = tech.get('mfi')
+                        if mfi is not None:
+                            mfi_signal = tech.get('mfi_signal', 'NEUTRAL')
+                            mfi_color = '🟢' if mfi_signal == 'OVERSOLD' else '🔴' if mfi_signal == 'OVERBOUGHT' else '⚪'
+                            st.markdown(f"- MFI: **{mfi:.0f}** {mfi_color} {mfi_signal}")
                     
                     with col2:
-                        st.markdown("**Consensus Details:**")
+                        st.markdown("**🎯 Trade Levels:**")
+                        buy_price = pick.get('buy_price')
+                        stop_loss = pick.get('stop_loss')
+                        take_profit = pick.get('take_profit')
+                        rr_ratio = pick.get('risk_reward_ratio')
+                        if buy_price:
+                            st.markdown(f"- 🟢 Buy: **${buy_price:.2f}**")
+                        if stop_loss:
+                            st.markdown(f"- 🔴 Stop Loss: **${stop_loss:.2f}**")
+                        if take_profit:
+                            st.markdown(f"- 🎯 Take Profit: **${take_profit:.2f}**")
+                        if rr_ratio:
+                            rr_color = '🟢' if rr_ratio >= 2.0 else '🟡' if rr_ratio >= 1.5 else '🔴'
+                            st.markdown(f"- {rr_color} Risk/Reward: **{rr_ratio:.1f}:1**")
+                        if pick.get('earnings_date'):
+                            days = pick.get('days_until_earnings')
+                            er = pick.get('earnings_risk', 'UNKNOWN')
+                            er_emoji = '🔴' if er == 'HIGH' else '🟡' if er == 'MEDIUM' else '🟢'
+                            st.markdown(f"- {er_emoji} Earnings: **{pick['earnings_date']}** ({days}d)")
+                    
+                    with col3:
+                        st.markdown("**🤝 Consensus Details:**")
                         st.markdown(f"- Recommendation: **{pick['recommendation']}**")
                         st.markdown(f"- Confidence: **{pick['confidence']*100:.0f}%**")
                         st.markdown(f"- Consensus Score: **{pick['consensus_score']}/100**")
@@ -2617,18 +2808,23 @@ Respond strictly as a JSON object with keys: `market_overview`, `top_picks`, `po
             st.markdown("### ⭐ 3/5 Agreement - BUY (Strong Majority)")
             st.markdown(f"*3 out of 5 perspectives agree on these {len(tier_3)} stocks*")
             
-            # Show condensed table
+            # Show condensed table with trade levels
             table_data = []
             for pick in tier_3[:15]:  # Top 15
                 table_data.append({
                     'Symbol': pick['symbol'],
+                    'Sector': pick.get('sector', 'N/A'),
                     'Quality': f"{pick['quality_score']}/100",
-                    'Recommendation': pick['recommendation'],
-                    'Consensus': f"{pick['consensus_score']}/100",
+                    'Rec': pick['recommendation'],
                     'Price': f"${pick.get('current_price', 0):.2f}",
+                    'Buy': f"${pick.get('buy_price', 0):.2f}" if pick.get('buy_price') else '-',
+                    'Stop': f"${pick.get('stop_loss', 0):.2f}" if pick.get('stop_loss') else '-',
+                    'Target': f"${pick.get('take_profit', 0):.2f}" if pick.get('take_profit') else '-',
+                    'R:R': f"{pick.get('risk_reward_ratio', 0):.1f}" if pick.get('risk_reward_ratio') else '-',
                     'Fund': pick.get('fundamentals', {}).get('grade', 'N/A'),
                     'Mom': pick.get('momentum', {}).get('grade', 'N/A'),
-                    'Risk': pick.get('risk', {}).get('grade', 'N/A')
+                    'Risk': pick.get('risk', {}).get('grade', 'N/A'),
+                    'Earnings': pick.get('earnings_risk', '-')
                 })
             
             df = pd.DataFrame(table_data)

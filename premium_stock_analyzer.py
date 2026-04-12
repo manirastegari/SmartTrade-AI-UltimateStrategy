@@ -25,6 +25,12 @@ except ImportError:
     ENHANCED_SIGNALS_AVAILABLE = False
     print("⚠️ Enhanced signals not available - run with basic mode")
 
+# Import sector fallback mapping (used when info['sector'] is unavailable in light mode)
+try:
+    from sector_mapping import get_sector as _get_sector_fallback
+except ImportError:
+    _get_sector_fallback = lambda s: 'Unknown'
+
 
 class PremiumStockAnalyzer:
     """
@@ -47,6 +53,13 @@ class PremiumStockAnalyzer:
             'sentiment': 0.10
         }
         
+        # Cache SPY data once (avoids 600+ redundant API calls per run!)
+        self._spy_hist_cache = None
+        self._spy_cache_time = None
+        
+        # Cache earnings calendar to flag stocks with upcoming earnings
+        self._earnings_cache = {}
+        
         # Initialize enhanced signals analyzer for 20%+ accuracy boost
         self.enhanced_analyzer = None
         if ENHANCED_SIGNALS_AVAILABLE:
@@ -55,6 +68,59 @@ class PremiumStockAnalyzer:
                 print("✅ Enhanced signals enabled (VWAP, Sector Rotation, S/R Zones, RSI(2), ATR Stops)")
             except Exception as e:
                 print(f"⚠️ Enhanced signals init failed: {e}")
+    
+    def _get_spy_hist(self) -> Optional[pd.DataFrame]:
+        """Get SPY history data, cached for the entire run to avoid 600+ redundant API calls."""
+        import time as _time
+        now = _time.time()
+        # Cache for 30 minutes (1800 seconds)
+        if self._spy_hist_cache is not None and self._spy_cache_time and (now - self._spy_cache_time) < 1800:
+            return self._spy_hist_cache
+        try:
+            spy = yf.Ticker('SPY')
+            spy_hist = spy.history(period='1y')
+            if not spy_hist.empty and len(spy_hist) > 20:
+                self._spy_hist_cache = spy_hist
+                self._spy_cache_time = now
+                return spy_hist
+        except Exception:
+            pass
+        return self._spy_hist_cache  # Return stale cache if fresh fetch fails
+    
+    def _check_earnings_proximity(self, symbol: str, info: Dict) -> Dict:
+        """Check if stock has earnings within next 14 days (risk flag). Uses free yfinance data."""
+        try:
+            if symbol in self._earnings_cache:
+                return self._earnings_cache[symbol]
+            
+            # Try to get next earnings date from info dict (already fetched, no extra API call)
+            earnings_ts = info.get('earningsTimestamp') or info.get('earningsDate')
+            if earnings_ts:
+                if isinstance(earnings_ts, (list, tuple)):
+                    earnings_ts = earnings_ts[0] if earnings_ts else None
+                if earnings_ts:
+                    from datetime import timezone
+                    if isinstance(earnings_ts, (int, float)):
+                        earnings_date = datetime.fromtimestamp(earnings_ts, tz=timezone.utc).replace(tzinfo=None)
+                    else:
+                        earnings_date = pd.Timestamp(earnings_ts).to_pydatetime()
+                    
+                    days_until = (earnings_date - datetime.now()).days
+                    result = {
+                        'earnings_date': earnings_date.strftime('%Y-%m-%d'),
+                        'days_until_earnings': days_until,
+                        'earnings_imminent': 0 <= days_until <= 7,
+                        'earnings_soon': 0 <= days_until <= 14,
+                        'earnings_risk': 'HIGH' if 0 <= days_until <= 3 else 'MEDIUM' if 0 <= days_until <= 7 else 'LOW'
+                    }
+                    self._earnings_cache[symbol] = result
+                    return result
+            
+            result = {'earnings_date': None, 'days_until_earnings': None, 'earnings_imminent': False, 'earnings_soon': False, 'earnings_risk': 'UNKNOWN'}
+            self._earnings_cache[symbol] = result
+            return result
+        except Exception:
+            return {'earnings_date': None, 'days_until_earnings': None, 'earnings_imminent': False, 'earnings_soon': False, 'earnings_risk': 'UNKNOWN'}
         
     def analyze_stock(self, symbol: str, hist_data: Optional[pd.DataFrame] = None, 
                      info: Optional[Dict] = None) -> Dict:
@@ -112,6 +178,12 @@ class PremiumStockAnalyzer:
                 except Exception as e:
                     enhanced_signals = None
             
+            # Check earnings proximity (risk flag for imminent earnings - no extra API call)
+            earnings_info = self._check_earnings_proximity(symbol, info)
+            if earnings_info.get('earnings_imminent'):
+                # Reduce confidence when earnings are within 7 days (high volatility risk)
+                quality_score = max(0, quality_score - 5)
+            
             # Determine recommendation
             recommendation, confidence = self._determine_recommendation(
                 quality_score, fundamentals, momentum, risk, sentiment
@@ -129,8 +201,11 @@ class PremiumStockAnalyzer:
                 'technical': technical,
                 'sentiment': sentiment,
                 'current_price': current_price,
-                'sector': info.get('sector', 'Unknown'),
+                'sector': info.get('sector', 'Unknown') if info.get('sector', 'Unknown') != 'Unknown' else _get_sector_fallback(symbol),
                 'analysis_date': datetime.now().strftime('%Y-%m-%d'),
+                'earnings_date': earnings_info.get('earnings_date'),
+                'days_until_earnings': earnings_info.get('days_until_earnings'),
+                'earnings_risk': earnings_info.get('earnings_risk', 'UNKNOWN'),
                 'success': True
             }
             
@@ -387,12 +462,11 @@ class PremiumStockAnalyzer:
         momentum['volume_score'] = vol_score
         scores.append(vol_score)
         
-        # 4. Relative Strength vs SPY
+        # 4. Relative Strength vs SPY (uses cached SPY data - 1 API call instead of 600+)
         try:
-            spy = yf.Ticker('SPY')
-            spy_hist = spy.history(period='1y')
+            spy_hist = self._get_spy_hist()
             
-            if not spy_hist.empty and len(spy_hist) > 20:
+            if spy_hist is not None and not spy_hist.empty and len(spy_hist) > 20:
                 # Calculate 3-month returns
                 stock_return = (hist['Close'].iloc[-1] / hist['Close'].iloc[-63] - 1) * 100 if len(hist) >= 63 else 0
                 spy_return = (spy_hist['Close'].iloc[-1] / spy_hist['Close'].iloc[-63] - 1) * 100 if len(spy_hist) >= 63 else 0
@@ -613,7 +687,35 @@ class PremiumStockAnalyzer:
         resistance = close.rolling(window=50).max().iloc[-1]
         volume_sma = hist['Volume'].rolling(window=20).mean().iloc[-1]
 
-        technical_score = np.mean([macd_score, bollinger_score])
+        # Money Flow Index (MFI) - volume-weighted RSI for better accuracy (no extra API call)
+        mfi_value = None
+        mfi_score = 60  # neutral default
+        try:
+            if len(hist) >= 20 and 'High' in hist.columns and 'Low' in hist.columns and 'Volume' in hist.columns:
+                typical_price = (hist['High'] + hist['Low'] + hist['Close']) / 3
+                money_flow = typical_price * hist['Volume']
+                tp_diff = typical_price.diff()
+                positive_flow = money_flow.where(tp_diff > 0, 0).rolling(14).sum()
+                negative_flow = money_flow.where(tp_diff < 0, 0).rolling(14).sum()
+                mfi_ratio = positive_flow / negative_flow.replace(0, np.nan)
+                mfi_series = 100 - (100 / (1 + mfi_ratio))
+                mfi_value = float(mfi_series.iloc[-1])
+                if not np.isnan(mfi_value):
+                    # MFI interpretation: <20 oversold (buy), >80 overbought (sell), 40-60 ideal
+                    if 40 <= mfi_value <= 60:
+                        mfi_score = 100  # Ideal zone
+                    elif 20 <= mfi_value < 40 or 60 < mfi_value <= 80:
+                        mfi_score = 75
+                    elif mfi_value < 20:
+                        mfi_score = 70  # Oversold - potential buy
+                    else:
+                        mfi_score = 40  # Overbought
+                else:
+                    mfi_value = None
+        except Exception:
+            pass
+
+        technical_score = np.mean([macd_score, bollinger_score, mfi_score])
         technical_grade = self._score_to_grade(technical_score)
 
         def safe_round(value, digits=2):
@@ -632,7 +734,9 @@ class PremiumStockAnalyzer:
             'bollinger_lower': safe_round(lower_band, 2),
             'support': safe_round(support, 2),
             'resistance': safe_round(resistance, 2),
-            'volume_sma': safe_round(volume_sma, 0)
+            'volume_sma': safe_round(volume_sma, 0),
+            'mfi': safe_round(mfi_value, 2) if mfi_value is not None else None,
+            'mfi_signal': 'OVERSOLD' if mfi_value and mfi_value < 20 else 'OVERBOUGHT' if mfi_value and mfi_value > 80 else 'NEUTRAL'
         }
     
     def _calculate_sentiment(self, info: Dict, current_price: Optional[float] = None) -> Dict:

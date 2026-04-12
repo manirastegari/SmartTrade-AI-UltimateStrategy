@@ -163,7 +163,6 @@ Temporary Items
 *~
 
 # Project specific
-*.db
 *.sqlite
 *.sqlite3
 data/
@@ -174,9 +173,14 @@ models/
 *.pkl
 *.joblib
 
+# Visitor tracking DB (regenerated on deploy)
+visitors.db
+
 # Exports and office temp files
 exports/
 ~$*.xlsx
+# Root-level ad-hoc Excel reports (scheduled results go in results/)
+SmartTrade_Premium_Analysis_*.xlsx
 
 # Streamlit
 .streamlit/
@@ -186,3 +190,6 @@ exports/
 secrets.toml
 config.toml
 api_keys.py
+
+# Results directory is TRACKED (stores scheduled analysis outputs)
+# !results/

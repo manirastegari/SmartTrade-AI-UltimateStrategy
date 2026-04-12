@@ -1,0 +1,81 @@
+name: Scheduled Ultimate Strategy Analysis
+
+on:
+  schedule:
+    # Run twice a week: Tuesday and Thursday at 10:30 AM ET (14:30 UTC)
+    # 30 minutes after market open — initial volatility settled, good data available
+    - cron: '30 14 * * 2,4'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  run-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 hour max (analysis takes ~45-60 min)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check if US market is open today
+        id: market_check
+        run: |
+          python3 -c "
+          from datetime import datetime, date
+          import pytz
+          
+          et = pytz.timezone('US/Eastern')
+          now_et = datetime.now(et)
+          today = now_et.date()
+          
+          # US market holidays 2025-2026 (approximate)
+          holidays = {
+              date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16),
+              date(2026, 4, 3), date(2026, 5, 25), date(2026, 7, 3),
+              date(2026, 9, 7), date(2026, 11, 26), date(2026, 12, 25),
+          }
+          
+          weekday = today.weekday()  # 0=Mon, 6=Sun
+          is_open = weekday < 5 and today not in holidays
+          print(f'Market open: {is_open} (weekday={weekday}, date={today})')
+          
+          with open('$GITHUB_OUTPUT' if '$GITHUB_OUTPUT' != '' else '/dev/null', 'a') as f:
+              f.write(f'is_open={\"true\" if is_open else \"false\"}\n')
+          " || echo "is_open=true" >> $GITHUB_OUTPUT
+
+      - name: Run Ultimate Strategy Analysis
+        if: steps.market_check.outputs.is_open == 'true'
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          SMARTTRADE_AUTO_PUSH: 'false'  # Don't auto-push from within the script
+        run: |
+          python3 scheduled_runner.py
+
+      - name: Commit and push results
+        if: steps.market_check.outputs.is_open == 'true'
+        run: |
+          git config user.name "SmartTrade Bot"
+          git config user.email "smarttrade-bot@users.noreply.github.com"
+          git add results/
+          git diff --cached --quiet || git commit -m "📊 Scheduled analysis $(date +%Y-%m-%d)"
+          git push
+
+      - name: Skip notification (market closed)
+        if: steps.market_check.outputs.is_open != 'true'
+        run: echo "⏭️ Market closed today — skipping analysis."
