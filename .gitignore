@@ -182,13 +182,11 @@ exports/
 # Root-level ad-hoc Excel reports (scheduled results go in results/)
 SmartTrade_Premium_Analysis_*.xlsx
 
-# Streamlit
-.streamlit/
+# Streamlit secrets (config.toml is tracked for theme/settings)
+.streamlit/secrets.toml
 
 # API keys and secrets
 .env
-secrets.toml
-config.toml
 api_keys.py
 
 # Results directory is TRACKED (stores scheduled analysis outputs)
