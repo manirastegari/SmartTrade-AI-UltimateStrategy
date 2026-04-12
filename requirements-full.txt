@@ -12,9 +12,6 @@ scikit-learn>=1.3.0
 xgboost>=2.0.0
 lightgbm>=4.1.0
 
-# Technical Analysis
-pandas-ta>=0.3.14b0
-
 # Sentiment Analysis (IMPROVED!)
 vaderSentiment>=3.3.2
 textblob>=0.17.1
