@@ -46,11 +46,13 @@ class PremiumStockAnalyzer:
     def __init__(self, data_mode='light', data_fetcher=None):
         self.data_mode = data_mode
         self.data_fetcher = data_fetcher  # Optional: use existing data fetcher with caching
+        # Momentum-forward weights: price action is the ultimate truth for alpha generation.
+        # High-growth leaders (AMD, NVDA, GOOGL) are momentum stocks first, value stocks second.
         self.quality_weights = {
-            'fundamentals': 0.40,
-            'momentum': 0.30,
-            'risk': 0.20,
-            'sentiment': 0.10
+            'fundamentals': 0.30,   # reduced: pure value metrics miss growth leaders
+            'momentum': 0.40,       # increased: price/RS/breakout is the #1 alpha driver
+            'risk': 0.15,           # reduced: high-beta performers deserve entry, not penalty
+            'sentiment': 0.15       # increased: analyst upgrades & target prices signal alpha
         }
         
         # Cache SPY data once (avoids 600+ redundant API calls per run!)
@@ -260,18 +262,21 @@ class PremiumStockAnalyzer:
         fundamentals = {}
         scores = []
         
-        # 1. P/E Ratio (lower is better for value, but not too low)
+        # 1. P/E Ratio — growth-stock aware (2026 bull/AI market context)
+        # High-growth leaders like AMD/NVDA trade at 40-150x P/E and outperform.
+        # We apply PEG correction below to forgive high P/E when growth justifies it.
         pe = info.get('trailingPE', info.get('forwardPE', 0))
         if pe and pe > 0:
-            # Ideal P/E: 15-25 for quality stocks
-            if 15 <= pe <= 25:
-                pe_score = 100
-            elif 10 <= pe < 15 or 25 < pe <= 30:
-                pe_score = 80
-            elif 5 <= pe < 10 or 30 < pe <= 40:
-                pe_score = 60
+            if 15 <= pe <= 30:
+                pe_score = 100   # Ideal: moderate value to growth
+            elif 10 <= pe < 15 or 30 < pe <= 45:
+                pe_score = 80   # Good range
+            elif 5 <= pe < 10 or 45 < pe <= 70:
+                pe_score = 65   # Acceptable for high-growth
+            elif pe > 70:
+                pe_score = 50   # High P/E — needs strong growth backing (PEG fix below)
             else:
-                pe_score = 40
+                pe_score = 40   # Cheap but possibly distressed
         else:
             pe = None
             pe_score = 50  # Neutral if not available
@@ -280,16 +285,20 @@ class PremiumStockAnalyzer:
         fundamentals['pe_score'] = pe_score
         scores.append(pe_score)
         
-        # 2. Revenue Growth (higher is better)
+        # 2. Revenue Growth — tiered to reward exceptional growth leaders
         revenue_growth = info.get('revenueGrowth', 0)
         if revenue_growth:
             revenue_growth_pct = revenue_growth * 100
-            if revenue_growth_pct >= 20:
-                rev_score = 100
+            if revenue_growth_pct >= 50:
+                rev_score = 100  # Hypergrowth (NVDA, AMD territory)
+            elif revenue_growth_pct >= 30:
+                rev_score = 95  # Very strong growth
+            elif revenue_growth_pct >= 20:
+                rev_score = 88
             elif revenue_growth_pct >= 10:
-                rev_score = 85
+                rev_score = 78
             elif revenue_growth_pct >= 5:
-                rev_score = 70
+                rev_score = 65
             elif revenue_growth_pct >= 0:
                 rev_score = 50
             else:
@@ -366,11 +375,56 @@ class PremiumStockAnalyzer:
         fundamentals['debt_equity'] = debt_equity
         fundamentals['debt_equity_score'] = de_score
         scores.append(de_score)
-        
+
+        # 6. Earnings Growth (EPS growth — explosive earnings = major alpha signal)
+        earnings_growth = info.get('earningsGrowth', info.get('earningsQuarterlyGrowth', 0))
+        if earnings_growth:
+            eg_pct = earnings_growth * 100
+            if eg_pct >= 50:
+                eg_score = 100
+            elif eg_pct >= 30:
+                eg_score = 90
+            elif eg_pct >= 15:
+                eg_score = 78
+            elif eg_pct >= 5:
+                eg_score = 62
+            elif eg_pct >= 0:
+                eg_score = 50
+            else:
+                eg_score = 30
+        else:
+            eg_pct = None
+            eg_score = 50
+        fundamentals['earnings_growth'] = round(eg_pct, 2) if eg_pct is not None else None
+        fundamentals['earnings_growth_score'] = eg_score
+        scores.append(eg_score)
+
+        # PEG Correction: forgive high P/E when backed by strong revenue/earnings growth.
+        # A stock growing revenue 40%+ with P/E of 60 is cheaper than a 5%-grower at P/E 20.
+        if fundamentals.get('pe_ratio') and fundamentals['pe_ratio'] > 30:
+            growth_rate = max(
+                fundamentals.get('revenue_growth') or 0,
+                fundamentals.get('earnings_growth') or 0,
+                1,
+            )
+            peg = fundamentals['pe_ratio'] / growth_rate
+            if peg <= 1.0 and scores[0] < 90:
+                scores[0] = 90   # Exceptional PEG — fully forgive high P/E
+                fundamentals['pe_score'] = 90
+            elif peg <= 1.5 and scores[0] < 80:
+                scores[0] = 80
+                fundamentals['pe_score'] = 80
+            elif peg <= 2.5 and scores[0] < 70:
+                scores[0] = 70
+                fundamentals['pe_score'] = 70
+            fundamentals['peg_ratio'] = round(peg, 2)
+        else:
+            fundamentals['peg_ratio'] = None
+
         # Overall fundamental score
         fundamentals['score'] = np.mean(scores)
         fundamentals['grade'] = self._score_to_grade(fundamentals['score'])
-        
+
         return fundamentals
     
     def _calculate_momentum(self, hist: pd.DataFrame, symbol: str) -> Dict:
@@ -426,17 +480,22 @@ class PremiumStockAnalyzer:
         rsi = 100 - (100 / (1 + rs))
         rsi_current = rsi.iloc[-1]
         
-        # RSI scoring: 40-60 = neutral, 30-40 = oversold (buy), 60-70 = overbought (caution)
-        if 40 <= rsi_current <= 55:
-            rsi_score = 100  # Ideal range
-        elif 30 <= rsi_current < 40 or 55 < rsi_current <= 60:
-            rsi_score = 85  # Slightly oversold/overbought
-        elif 60 < rsi_current <= 70:
-            rsi_score = 60  # Overbought
+        # RSI scoring — momentum-friendly (breakout stocks like AMD/NVDA run RSI 65-80)
+        # Old logic penalised RSI>60 — that was systematically filtering OUT the best performers.
+        if 50 <= rsi_current <= 70:
+            rsi_score = 100  # Prime momentum zone — trending up with room to run
+        elif 40 <= rsi_current < 50:
+            rsi_score = 82   # Building momentum
+        elif 70 < rsi_current <= 80:
+            rsi_score = 80   # Strong breakout momentum (was 40 — WRONG!)
+        elif 80 < rsi_current <= 85:
+            rsi_score = 62   # Overextended but still trending
         elif rsi_current < 30:
-            rsi_score = 70  # Oversold - potential buy
+            rsi_score = 70   # Oversold — potential bounce
+        elif rsi_current < 40:
+            rsi_score = 75   # Slightly oversold
         else:
-            rsi_score = 40  # Extremely overbought
+            rsi_score = 45   # >85: extremely overbought, caution
         
         momentum['rsi'] = round(rsi_current, 2)
         momentum['rsi_score'] = rsi_score
@@ -487,13 +546,57 @@ class PremiumStockAnalyzer:
                 momentum['relative_strength'] = round(relative_strength, 2)
                 momentum['relative_strength_score'] = rs_score
                 scores.append(rs_score)
+
+                # 4b. 6-month relative strength (better signal for sustained leaders)
+                if len(spy_hist) > 126 and len(hist) >= 126:
+                    stock_return_6m = (hist['Close'].iloc[-1] / hist['Close'].iloc[-126] - 1) * 100
+                    spy_return_6m = (spy_hist['Close'].iloc[-1] / spy_hist['Close'].iloc[-126] - 1) * 100
+                    rs_6m = stock_return_6m - spy_return_6m
+                    if rs_6m >= 20:
+                        rs_6m_score = 100
+                    elif rs_6m >= 10:
+                        rs_6m_score = 85
+                    elif rs_6m >= 0:
+                        rs_6m_score = 70
+                    elif rs_6m >= -10:
+                        rs_6m_score = 50
+                    else:
+                        rs_6m_score = 30
+                    momentum['rs_6m'] = round(rs_6m, 2)
+                    momentum['rs_6m_score'] = rs_6m_score
+                    scores.append(rs_6m_score)
+                else:
+                    momentum['rs_6m'] = None
             else:
                 momentum['relative_strength'] = None
                 momentum['relative_strength_score'] = 50
                 scores.append(50)
-        except:
+        except Exception:
             momentum['relative_strength'] = None
             momentum['relative_strength_score'] = 50
+            scores.append(50)
+
+        # 5. 52-week High Proximity — breakout detection
+        # Stocks near 52w highs are in strong institutional demand and setting up breakouts.
+        try:
+            high_52w = hist['High'].rolling(252).max().iloc[-1] if len(hist) >= 252 else hist['High'].max()
+            pct_from_high = ((current_price - high_52w) / high_52w) * 100
+            if pct_from_high >= -3:
+                h52w_score = 100  # At / breaking 52w high — breakout!
+            elif pct_from_high >= -10:
+                h52w_score = 85   # Strong — within 10% of highs
+            elif pct_from_high >= -20:
+                h52w_score = 68   # Moderate recovery
+            elif pct_from_high >= -35:
+                h52w_score = 50   # Below highs
+            else:
+                h52w_score = 30   # Deep below highs — weak
+            momentum['pct_from_52w_high'] = round(pct_from_high, 2)
+            momentum['h52w_score'] = h52w_score
+            scores.append(h52w_score)
+        except Exception:
+            momentum['pct_from_52w_high'] = None
+            momentum['h52w_score'] = 50
             scores.append(50)
         
         # Overall momentum score
@@ -526,8 +629,8 @@ class PremiumStockAnalyzer:
                 beta_score = 50
             else:
                 # High Beta zone (> 1.5)
-                # Beta Forgiveness: If momentum is elite, high beta is good!
-                if momentum_score >= 80:
+                # Beta Forgiveness: high beta on a momentum leader = upside volatility, not risk!
+                if momentum_score >= 70:  # lowered from 80 — lets AMD/NVDA class through
                     beta_score = 65  # Forgiven: reduced penalty
                 else:
                     beta_score = 30  # High volatility penalty
@@ -678,7 +781,17 @@ class PremiumStockAnalyzer:
         band_range = upper_band - lower_band if upper_band and lower_band else None
         if band_range and band_range != 0:
             bollinger_position = ((current_price - lower_band) / band_range) * 100
-            bollinger_score = 100 if 40 <= bollinger_position <= 60 else 80 if 30 <= bollinger_position <= 70 else 60
+            # Breakout-friendly scoring: upper band breakout = strong momentum, not overbought penalty
+            if bollinger_position >= 85:
+                bollinger_score = 90  # Upper band breakout — strong bullish momentum
+            elif bollinger_position >= 60:
+                bollinger_score = 100  # Strong upper half — healthy uptrend
+            elif 40 <= bollinger_position < 60:
+                bollinger_score = 82   # Mid-band — stable
+            elif 20 <= bollinger_position < 40:
+                bollinger_score = 65   # Lower half — weak
+            else:
+                bollinger_score = 52   # Near lower band — possible bounce or downtrend
         else:
             bollinger_position = None
             bollinger_score = 60

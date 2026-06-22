@@ -992,11 +992,12 @@ class FixedUltimateStrategyAnalyzer:
         picks = []
         
         for symbol, result in quality_results.items():
-            # Institutional scoring: prioritize quality and safety
+            # Institutional scoring: quality + safety + momentum leadership.
+            # Real institutions chase momentum — they don't ignore it (10% was too low).
             inst_score = (
-                result['fundamentals']['score'] * 0.60 +
-                result['risk']['score'] * 0.30 +
-                result['momentum']['score'] * 0.10
+                result['fundamentals']['score'] * 0.40 +
+                result['risk']['score'] * 0.25 +
+                result['momentum']['score'] * 0.35
             )
             
             # Institutional threshold: prefer quality (slightly relaxed)
