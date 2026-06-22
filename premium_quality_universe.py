@@ -345,6 +345,7 @@ PREMIUM_QUALITY_UNIVERSE = {
         'ONDS',   # Ondas Holdings — industrial drones & rail automation
         'RDW',    # Redwire — space infrastructure
         'CRCL',   # Circle Internet Group — USDC / crypto fintech
+        'SPCX',   # SpaceX — commercial space & Starlink
 
         # Health & Consumer Growth
         'HIMS',   # Hims & Hers Health — telehealth/GLP-1 growth
