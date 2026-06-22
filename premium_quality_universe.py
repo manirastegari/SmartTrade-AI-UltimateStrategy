@@ -405,7 +405,116 @@ PREMIUM_QUALITY_UNIVERSE = {
         
         # Infrastructure
         'BIP', 'ENB', 'TRP', 'PPL', 'AEE'
-    ]
+    ],
+
+    # ========================================================================
+    # S&P 500 REMAINING - completing full index coverage
+    # ========================================================================
+    'sp500_remaining': [
+        # Diversified / conglomerates
+        'A', 'ACGL', 'ADM', 'ALLE', 'AMP', 'ANSS', 'APH', 'APTV',
+        'ARE', 'AXON', 'AZO',
+        # Airlines & travel
+        'AAL', 'DAL', 'LUV', 'UAL', 'NCLH', 'RCL', 'EXPE',
+        # Auto & parts
+        'AAP', 'BWA', 'KMX',
+        # Building & construction
+        'BALL', 'BLDR', 'DHI', 'PHM', 'NVR',
+        # Chemicals
+        'CE', 'CF', 'LYB', 'MOS',
+        # Consumer brands
+        'BG', 'HAS', 'L', 'LEVI', 'LKQ', 'LW', 'M', 'MAS', 'MAT',
+        'PARA', 'PVH', 'WHR', 'XRAY',
+        # Energy & power
+        'CEG', 'EQT', 'HES', 'MRO', 'NRG', 'VST',
+        # Entertainment & media
+        'LYV', 'MTCH',
+        # Financial services
+        'BRK-B', 'BRO', 'CPAY', 'DFS', 'EG', 'FNF', 'FTV',
+        'JNPR', 'L', 'LNC', 'MSCI', 'NTRS', 'PFG', 'RE',
+        'RHI', 'RJF', 'ROL', 'SYF',
+        # Healthcare
+        'BIO', 'BKNG', 'COR', 'DVA', 'EFX', 'GRMN', 'HOLX',
+        'HSIC', 'IEX', 'MCK', 'MTD', 'TDY', 'WAT', 'ZTS',
+        # Industrials
+        'BLDR', 'CPRT', 'CSGP', 'CTVA', 'CZR', 'DAY', 'DXC',
+        'EBAY', 'ETSY', 'FISV', 'GWW', 'HPE', 'HST',
+        'INVH', 'IRM', 'J', 'JBL', 'JCI', 'KVUE',
+        'NTR', 'ODFL', 'ORLY', 'RSG', 'SNA',
+        'SPG', 'TEL', 'TRMB', 'WAB', 'WM', 'WY',
+        # Misc S&P 500
+        'ACGL', 'BBDC', 'BF-B', 'CBRE', 'CCK', 'CRL', 'CTRA',
+        'CTSH', 'FMC', 'IVZ', 'JKHY', 'LDOS', 'MKTX', 'MRO',
+        'OGE', 'PCAR', 'QRVO', 'SBAC', 'WRB',
+    ],
+
+    # ========================================================================
+    # EXTENDED TOP-1000 COVERAGE
+    # Canadian blue-chips + AI-era growth + deep sector fill
+    # ========================================================================
+    'extended_top1000': [
+        # ── Canadian banks & blue-chips (US-listed) ───────────────────────────
+        'RY',  'TD',  'BMO', 'BNS', 'CM',  'NA',   # Big-6 Canadian banks
+        'BCE', 'MFC', 'BAM', 'GFL', 'WCN',          # Telecom, life ins, alt-assets, waste
+        'CNQ', 'SU',  'CNR', 'CP',  'ATD',           # Oil sands, rails, convenience stores
+
+        # ── High-growth momentum tech ─────────────────────────────────────────
+        'TTD',  'TWLO', 'PINS', 'SNAP', 'ZI',
+        'DOCN', 'APP',  'DKNG', 'IAC',
+        'CELH', 'DUOL', 'BRZE', 'INTA', 'ZETA',
+        'PCOR', 'FRSH', 'APPF', 'WK',  'CWAN',
+        'ALRM', 'SMAR', 'DOMO', 'UPWK', 'FVRR',
+        'PSTG', 'NTNX', 'NCNO', 'STEP', 'RELY',
+
+        # ── Semiconductors / photonics ────────────────────────────────────────
+        'WOLF', 'ACLS', 'AMBA', 'POWI',
+        'MKSI', 'ONTO', 'FORM', 'ICHR', 'CAMT',
+        'SITM', 'ALGM', 'OLED', 'KLIC', 'COHR',
+
+        # ── Biotech & precision medicine ─────────────────────────────────────
+        'RXRX', 'TMDX', 'AXSM', 'RARE',
+        'FOLD', 'ARWR', 'EXEL', 'IRTC',
+        'ALKS', 'ACAD', 'NVCR', 'DNLI',
+        'NTRA', 'GH',   'LNTH', 'RXST',
+        'OMCL', 'INSP', 'SWAV', 'IART', 'GKOS', 'INMD',
+
+        # ── Uranium & nuclear power ───────────────────────────────────────────
+        'CCJ', 'NXE',  'DNN',  'UEC',  'LEU',
+
+        # ── International ADRs (all US-listed exchanges) ──────────────────────
+        'SAP',  'BABA', 'JD',   'PDD',  'SE',
+        'TCOM', 'GRAB', 'CPNG', 'STNE', 'XP',
+
+        # ── Consumer & retail extended ────────────────────────────────────────
+        'ANF',  'DKS',  'KSS',  'JWN',
+
+        # ── Industrials / engineering / services ──────────────────────────────
+        'EME',  'MTZ',  'ARMK', 'WEX',  'TREX',
+        'TTEK', 'AAON', 'AZPN', 'ESAB', 'HRI',
+        'IBP',  'GMS',  'GATX', 'DRS',  'JOBY', 'ACHR',
+
+        # ── Energy extended ───────────────────────────────────────────────────
+        'OVV',  'DINO', 'NOG',  'VTLE', 'CHK',
+
+        # ── Real estate extended ──────────────────────────────────────────────
+        'COLD', 'EGP',  'IIPR', 'GLPI', 'AMH',
+        'IRT',  'PDM',  'ROIC',
+
+        # ── Crypto & digital assets ───────────────────────────────────────────
+        'MARA', 'RIOT', 'HUT',  'BITF', 'CLSK',
+
+        # ── Fintech & payments extended ───────────────────────────────────────
+        'FOUR', 'FLYW', 'PAYO',
+
+        # ── Precious metals ───────────────────────────────────────────────────
+        'WPM',  'PAAS', 'AG',   'EGO',
+
+        # ── Financial services extended ───────────────────────────────────────
+        'FAF',  'PIPR', 'CADE', 'GBCI',
+
+        # ── Media, entertainment & space ──────────────────────────────────────
+        'NYT',  'IMAX', 'PL',
+    ],
 }
 
 
