@@ -9,7 +9,7 @@ Usage:
 
 Notes:
 - Reads API key from env var XAI_API_KEY or api_keys.XAI_API_KEY if present.
-- Defaults model to 'grok-4' (latest flagship model for maximum accuracy). Override via XAI_MODEL.
+- Defaults model to 'grok-4.3' (latest flagship model — best-in-class accuracy and instruction following). Override via XAI_MODEL.
 - Returns a structured dict suitable for UI and Excel export.
 """
 
@@ -22,13 +22,13 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-DEFAULT_PRIMARY_MODEL = "grok-4"
-DEFAULT_FALLBACK_MODEL = "grok-4-1-fast-reasoning"
+DEFAULT_PRIMARY_MODEL = "grok-4.3"
+DEFAULT_FALLBACK_MODEL = "grok-4.20-0309-reasoning"
 MODEL_FALLBACKS = {
 	DEFAULT_PRIMARY_MODEL: DEFAULT_FALLBACK_MODEL,
-	DEFAULT_FALLBACK_MODEL: "grok-4-1-fast-non-reasoning",
-	"grok-4-1-fast-non-reasoning": "grok-4-fast-non-reasoning",
-	"grok-4-fast-reasoning": "grok-4-fast-non-reasoning",
+	DEFAULT_FALLBACK_MODEL: "grok-4.20-0309-non-reasoning",
+	"grok-4.20-0309-non-reasoning": "grok-4.20-multi-agent-0309",
+	"grok-4.3-latest": DEFAULT_FALLBACK_MODEL,
 }
 
 
@@ -53,7 +53,7 @@ class XAIClient:
 				key = None
 
 		self.api_key = key
-		# Default to grok-4 (latest flagship) for maximum analysis accuracy
+		# Default to grok-4.3 (latest flagship) — best-in-class accuracy and instruction following
 		self.model = model or os.getenv("XAI_MODEL", DEFAULT_PRIMARY_MODEL)
 		self.fallback_model = os.getenv("XAI_FALLBACK_MODEL") or MODEL_FALLBACKS.get(self.model)
 		# xAI typically uses an OpenAI-compatible endpoint path
@@ -216,11 +216,20 @@ class XAIClient:
 		system = {
 			"role": "system",
 			"content": (
-				"You are an institutional-grade trading analyst AI. Provide conservative, professional, and actionable analysis. "
-				"Your goal: deliver extremely low-risk, high-reward recommendations, with risk controls and timeframes. "
-				"Use knowledge of news, sentiment, volume, institutional flow, SEC filings, geopolitics, tariffs, and industry momentum. "
-				"Respond in strict JSON with keys: summary, market_assessment, timeframe_guidance, fundamentals_review, "
-				"technical_review, ai_picks (array of objects: symbol, rationale, timeframe, risk, reward, confidence, notes)."
+				"You are an elite institutional-grade quantitative trading analyst powered by Grok 4.3. "
+				"Your mandate is capital preservation first, alpha generation second. "
+				"Apply rigorous multi-factor analysis: fundamental quality (earnings quality, FCF, debt coverage), "
+				"technical signals (RSI, MACD, moving averages, volume-confirmed breakouts), "
+				"macro context (rates, sector rotation, geopolitics, tariffs), "
+				"and alternative data (institutional flows, SEC filings, news sentiment, earnings catalysts). "
+				"For every pick: assign a precise confidence score (0-100), define concrete stop-loss and take-profit levels, "
+				"flag any red flags or disqualifying risks, and specify the optimal holding timeframe. "
+				"Only recommend stocks where asymmetric risk/reward is clearly justified. Reject borderline cases. "
+				"Follow instructions exactly. "
+				"Respond ONLY in strict JSON with keys: summary (string), market_assessment (string), "
+				"timeframe_guidance (string), fundamentals_review (string), technical_review (string), "
+				"risk_warnings (array of strings), "
+				"ai_picks (array of objects: symbol, rationale, timeframe, risk, reward, stop_loss, take_profit, confidence, notes)."
 			)
 		}
 		# Trim context to keep tokens efficient
@@ -249,14 +258,18 @@ class XAIClient:
 					"determine_timeframes": ["short-term (days)", "swing (weeks)", "position (months)"],
 					"verify_fundamentals": True,
 					"evaluate_chart_patterns": True,
-					"evaluate_technicals": ["RSI", "MACD", "MAs", "Breakouts"],
-					"target_outcome": "very low-risk and high-reward picks with stop-loss/take-profit guidance",
+					"evaluate_technicals": ["RSI", "MACD", "MAs", "Breakouts", "Volume", "ATR"],
+					"require_stop_loss_take_profit": True,
+					"reject_high_risk_picks": True,
+					"confidence_threshold": 65,
+					"target_outcome": "extremely low-risk, high-reward picks with precise stop-loss, take-profit, and confidence scores",
 				},
 			})
 		}
 
 		try:
-			result = self.chat([system, user])
+			# temperature=0.1 for maximum precision/determinism; max_tokens=4000 for rich, complete analysis
+			result = self.chat([system, user], temperature=0.1, max_tokens=4000)
 			result["enabled"] = True
 			result["model"] = self.model
 			result["generated_at"] = int(time.time())
