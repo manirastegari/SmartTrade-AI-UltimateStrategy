@@ -32,6 +32,11 @@ PREMIUM_QUALITY_UNIVERSE = {
         # Semiconductors - Established
         'ADI', 'KLAC', 'MU', 'MCHP', 'NXPI', 'MRVL',
         'MPWR', 'ON', 'ENTG', 'TER', 'STX', 'WDC',
+        # Critical semiconductor leaders (were missing!)
+        'AMD', 'INTC', 'TSM',   # AMD is an AI/HPC giant, INTC rebuilding, TSM is foundry king
+        'ALAB',                  # Astera Labs — AI connectivity silicon
+        'VRT',                   # Vertiv — data-center power & cooling infrastructure
+        'GEV',                   # GE Vernova — power grid / energy transition
         
         # IT Services & Equipment
         'CTSH', 'IT', 'GLW', 'HPQ', 'MSI', 'CHKP'
@@ -329,6 +334,21 @@ PREMIUM_QUALITY_UNIVERSE = {
         'TSLA', 'COIN', 'SQ', 'SHOP', 'RBLX', 'U', 'DASH', 'PATH', 'CFLT',
         'BILL', 'PCTY', 'PAYC', 'HUBS', 'DOCU', 'OKTA', 'ZM', 'MDB', 'NET',
         'CRWD', 'SNOW', 'PLTR', 'ANET', 'SMCI', 'ARM', 'IOT',
+
+        # AI Infrastructure & Hyperscale (high-conviction growth 2025-26)
+        'CRWV',   # CoreWeave — AI cloud GPU infrastructure
+        'NBIS',   # Nebius Group — European AI infrastructure
+        'AAOI',   # Applied Optoelectronics — optical networking for AI datacenters
+        'MSTR',   # MicroStrategy / Strategy — Bitcoin treasury + analytics
+        'RGTI',   # Rigetti Computing — quantum computing
+        'OKLO',   # Oklo — nuclear microreactors for AI data centers
+        'ONDS',   # Ondas Holdings — industrial drones & rail automation
+        'RDW',    # Redwire — space infrastructure
+        'CRCL',   # Circle Internet Group — USDC / crypto fintech
+
+        # Health & Consumer Growth
+        'HIMS',   # Hims & Hers Health — telehealth/GLP-1 growth
+        'BE',     # Bloom Energy — fuel cell / clean power
         
         # Fintech
         'SOFI', 'HOOD', 'UPST', 'AFRM', 'NU', 'MELI',
